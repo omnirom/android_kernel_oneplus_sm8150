@@ -213,8 +213,7 @@ static int _rsc_hw_solver_init(struct sde_rsc_priv *rsc)
 	dss_reg_w(&rsc->drv_io, SDE_RSC_SOLVER_MODE_PARM1_DRV0_MODE1,
 					0x80000000, rsc->debug_mode);
 	dss_reg_w(&rsc->drv_io, SDE_RSC_SOLVER_MODE_PARM2_DRV0_MODE1,
-			rsc->timer_config.rsc_backoff_time_ns * 2,
-			rsc->debug_mode);
+			rsc->timer_config.rsc_backoff_time_ns, rsc->debug_mode);
 	dss_reg_w(&rsc->drv_io, SDE_RSC_SOLVER_MODE_PARM3_DRV0_MODE1,
 			rsc->timer_config.pdc_backoff_time_ns, rsc->debug_mode);
 
@@ -336,15 +335,7 @@ static int sde_rsc_mode2_entry_v3(struct sde_rsc_priv *rsc)
 	if (rsc->power_collapse_block)
 		return -EINVAL;
 
-	if (rsc->sw_fs_enabled) {
-		rc = regulator_set_mode(rsc->fs, REGULATOR_MODE_FAST);
-		if (rc) {
-			pr_err("vdd reg fast mode set failed rc:%d\n", rc);
-			return rc;
-		}
-	}
-
-	dss_reg_w(&rsc->drv_io, SDE_RSC_SOLVER_SOLVER_MODES_ENABLED_DRV0,
+	dss_reg_w(&rsc->wrapper_io, SDE_RSC_SOLVER_SOLVER_MODES_ENABLED_DRV0,
 						0x7, rsc->debug_mode);
 
 	for (i = 0; i <= MAX_MODE2_ENTRY_TRY; i++) {
@@ -424,15 +415,10 @@ static int sde_rsc_state_update_v3(struct sde_rsc_priv *rsc,
 	case SDE_RSC_VID_STATE:
 		pr_debug("video mode handling\n");
 
-		dss_reg_w(&rsc->wrapper_io, SDE_RSCC_WRAPPER_OVERRIDE_CTRL,
-							0x0, rsc->debug_mode);
-		wmb(); /* disable double buffer config before vsync select */
-
 		ctrl2_config = (rsc->vsync_source & 0x7) << 4;
 		ctrl2_config |= (BIT(0) | BIT(1) | BIT(3));
 		dss_reg_w(&rsc->wrapper_io, SDE_RSCC_WRAPPER_OVERRIDE_CTRL2,
 				ctrl2_config, rsc->debug_mode);
-		wmb(); /* select vsync before double buffer config enabled */
 
 		dss_reg_w(&rsc->wrapper_io, SDE_RSCC_WRAPPER_CTRL,
 						0x1, rsc->debug_mode);
@@ -533,7 +519,7 @@ static int rsc_hw_bwi_status_v3(struct sde_rsc_priv *rsc, bool bw_indication)
 						0x1, rsc->debug_mode);
 
 	bw_ack = dss_reg_r(&rsc->wrapper_io, SDE_RSCC_WRAPPER_DEBUG_CTRL2,
-			rsc->debug_mode) & BIT(14);
+			rsc->debug_mode) & BIT(13);
 
 	/* check for sequence running status before exiting */
 	for (count = MAX_CHECK_LOOPS; count > 0 && !bw_ack; count--) {
@@ -542,56 +528,13 @@ static int rsc_hw_bwi_status_v3(struct sde_rsc_priv *rsc, bool bw_indication)
 		dss_reg_w(&rsc->wrapper_io, SDE_RSCC_WRAPPER_BW_INDICATION,
 						bw_indication, rsc->debug_mode);
 		bw_ack = dss_reg_r(&rsc->wrapper_io,
-		       SDE_RSCC_WRAPPER_DEBUG_CTRL2, rsc->debug_mode) & BIT(14);
+		       SDE_RSCC_WRAPPER_DEBUG_CTRL2, rsc->debug_mode) & BIT(13);
 	}
 
 	if (!bw_ack)
 		rc = -EINVAL;
 
 	return rc;
-}
-
-static int rsc_hw_timer_update_v3(struct sde_rsc_priv *rsc)
-{
-	if (!rsc) {
-		pr_debug("invalid input param\n");
-		return -EINVAL;
-	}
-
-	pr_debug("rsc hw timer update\n");
-
-	dss_reg_w(&rsc->drv_io, SDE_RSC_SOLVER_TIME_SLOT_TABLE_1_DRV0,
-		rsc->timer_config.rsc_time_slot_0_ns, rsc->debug_mode);
-	dss_reg_w(&rsc->drv_io, SDE_RSC_SOLVER_TIME_SLOT_TABLE_2_DRV0,
-		rsc->timer_config.rsc_time_slot_1_ns, rsc->debug_mode);
-	dss_reg_w(&rsc->drv_io, SDE_RSC_SOLVER_TIME_SLOT_TABLE_3_DRV0,
-		rsc->timer_config.rsc_time_slot_2_ns, rsc->debug_mode);
-
-	dss_reg_w(&rsc->drv_io, SDE_RSC_SOLVER_MODE_PARM2_DRV0_MODE0,
-			rsc->timer_config.rsc_backoff_time_ns, rsc->debug_mode);
-	dss_reg_w(&rsc->drv_io, SDE_RSC_SOLVER_MODE_PARM3_DRV0_MODE0,
-			rsc->timer_config.pdc_backoff_time_ns, rsc->debug_mode);
-
-	dss_reg_w(&rsc->drv_io, SDE_RSC_SOLVER_MODE_PARM2_DRV0_MODE1,
-			rsc->timer_config.rsc_backoff_time_ns * 2,
-			rsc->debug_mode);
-
-	dss_reg_w(&rsc->drv_io, SDE_RSC_SOLVER_MODE_PARM3_DRV0_MODE1,
-			rsc->timer_config.pdc_backoff_time_ns, rsc->debug_mode);
-
-	dss_reg_w(&rsc->drv_io, SDE_RSC_SOLVER_MODE_PARM3_DRV0_MODE2,
-			rsc->timer_config.pdc_backoff_time_ns, rsc->debug_mode);
-
-	dss_reg_w(&rsc->wrapper_io, SDE_RSCC_WRAPPER_STATIC_WAKEUP_0,
-		rsc->timer_config.static_wakeup_time_ns, rsc->debug_mode);
-
-	dss_reg_w(&rsc->wrapper_io, SDE_RSCC_WRAPPER_RSCC_MODE_THRESHOLD,
-		rsc->timer_config.rsc_mode_threshold_time_ns, rsc->debug_mode);
-
-	/* make sure that hw timers are updated */
-	wmb();
-
-	return 0;
 }
 
 int sde_rsc_hw_register_v3(struct sde_rsc_priv *rsc)
@@ -601,10 +544,10 @@ int sde_rsc_hw_register_v3(struct sde_rsc_priv *rsc)
 	rsc->hw_ops.init = rsc_hw_init_v3;
 	rsc->hw_ops.state_update = sde_rsc_state_update_v3;
 	rsc->hw_ops.bwi_status = rsc_hw_bwi_status_v3;
-	rsc->hw_ops.timer_update = rsc_hw_timer_update_v3;
 
 	rsc->hw_ops.tcs_wait = rsc_hw_tcs_wait;
 	rsc->hw_ops.tcs_use_ok = rsc_hw_tcs_use_ok;
+	rsc->hw_ops.timer_update = rsc_hw_timer_update;
 	rsc->hw_ops.is_amc_mode = rsc_hw_is_amc_mode;
 	rsc->hw_ops.hw_vsync = rsc_hw_vsync;
 	rsc->hw_ops.debug_show = sde_rsc_debug_show;
