@@ -749,17 +749,16 @@ error:
 static int dsi_panel_wled_register(struct dsi_panel *panel,
 		struct dsi_backlight_config *bl)
 {
-	int rc = 0;
 	struct backlight_device *bd;
 
 	bd = backlight_device_get_by_type(BACKLIGHT_RAW);
 	if (!bd) {
-		pr_err("[%s] fail raw backlight register\n", panel->name);
-		rc = -EINVAL;
+		pr_debug("[%s] backlight device list empty\n", panel->name);
+		return -EPROBE_DEFER;
 	}
 
 	bl->raw_bd = bd;
-	return rc;
+	return 0;
 }
 
 bool HBM_flag =false;
@@ -3603,6 +3602,10 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 	if (rc)
 	pr_err("failed to parse dynamic clk config, rc=%d\n", rc);
 
+	rc = dsi_panel_parse_dyn_clk_caps(panel);
+	if (rc)
+		pr_err("failed to parse dynamic clk config, rc=%d\n", rc);
+
 	rc = dsi_panel_parse_phy_props(panel);
 	if (rc) {
 		pr_err("failed to parse panel physical dimension, rc=%d\n", rc);
@@ -3918,6 +3921,9 @@ int dsi_panel_get_mode(struct dsi_panel *panel,
 			goto parse_fail;
 		}
 
+		if (panel->panel_mode == DSI_OP_VIDEO_MODE)
+			mode->priv_info->mdp_transfer_time_us = 0;
+
 		rc = dsi_panel_parse_dsc_params(mode, utils);
 		if (rc) {
 			pr_err("failed to parse dsc params, rc=%d\n", rc);
@@ -3999,11 +4005,10 @@ int dsi_panel_get_host_cfg_for_mode(struct dsi_panel *panel,
 	config->video_timing.dsc_enabled = mode->priv_info->dsc_enabled;
 	config->video_timing.dsc = &mode->priv_info->dsc;
 
-//	config->bit_clk_rate_hz_override = mode->timing.clk_rate_hz;
 	if (dyn_clk_caps->dyn_clk_support)
-	config->bit_clk_rate_hz_override = mode->timing.clk_rate_hz;
+		config->bit_clk_rate_hz_override = mode->timing.clk_rate_hz;
 	else
-	config->bit_clk_rate_hz_override = mode->priv_info->clk_rate_hz;
+		config->bit_clk_rate_hz_override = mode->priv_info->clk_rate_hz;
 
 	config->esc_clk_rate_hz = 19200000;
 	mutex_unlock(&panel->panel_lock);
@@ -4108,6 +4113,9 @@ int dsi_panel_set_lp1(struct dsi_panel *panel)
 	}
 
 	mutex_lock(&panel->panel_lock);
+	if (!panel->panel_initialized)
+		goto exit;
+
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_LP1);
 	if (rc)
 		pr_err("[%s] failed to send DSI_CMD_SET_LP1 cmd, rc=%d\n",
@@ -4115,6 +4123,7 @@ int dsi_panel_set_lp1(struct dsi_panel *panel)
 	
 	panel->need_power_on_backlight = true;
 
+exit:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
 }
@@ -4129,10 +4138,14 @@ int dsi_panel_set_lp2(struct dsi_panel *panel)
 	}
 
 	mutex_lock(&panel->panel_lock);
+	if (!panel->panel_initialized)
+		goto exit;
+
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_LP2);
 	if (rc)
 		pr_err("[%s] failed to send DSI_CMD_SET_LP2 cmd, rc=%d\n",
 		       panel->name, rc);
+exit:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
 }
@@ -4147,10 +4160,14 @@ int dsi_panel_set_nolp(struct dsi_panel *panel)
 	}
 
 	mutex_lock(&panel->panel_lock);
+	if (!panel->panel_initialized)
+		goto exit;
+
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_NOLP);
 	if (rc)
 		pr_err("[%s] failed to send DSI_CMD_SET_NOLP cmd, rc=%d\n",
 		       panel->name, rc);
+exit:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
 }
@@ -4343,6 +4360,7 @@ int dsi_panel_send_roi_dcs(struct dsi_panel *panel, int ctrl_idx,
 	mutex_unlock(&panel->panel_lock);
 
 	dsi_panel_destroy_cmd_packets(set);
+	dsi_panel_dealloc_cmd_packets(set);
 
 	return rc;
 }
@@ -4430,11 +4448,14 @@ int dsi_panel_enable(struct dsi_panel *panel)
 		rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_ON);
 		pr_err("Send DSI_CMD_SET_ON cmds\n");
 	}
-		SDE_ATRACE_END("dsi_panel_tx_cmd_set");
+	SDE_ATRACE_END("dsi_panel_tx_cmd_set");
 	if (rc) {
 		pr_err("[%s] Failed to send DSI_CMD_SET_ON cmds, rc=%d\n",
 			panel->name, rc);
+	} else {
+		panel->panel_initialized = true;
 	}
+	
 	panel->need_power_on_backlight = true;
 	
 	SDE_ATRACE_BEGIN("gamma");
@@ -4449,7 +4470,6 @@ int dsi_panel_enable(struct dsi_panel *panel)
 	}
 	SDE_ATRACE_END("gamma");
 
-	panel->panel_initialized = true;
 	pr_err("dsi_panel_enable aod_mode =%d\n",panel->aod_mode);
 
 	SDE_ATRACE_BEGIN("mutex_unlock");

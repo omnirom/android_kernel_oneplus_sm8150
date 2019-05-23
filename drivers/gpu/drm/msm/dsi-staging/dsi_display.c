@@ -717,8 +717,11 @@ static bool dsi_display_validate_reg_read(struct dsi_panel *panel)
 	for (j = 0; j < config->groups; ++j) {
 		for (i = 0; i < len; ++i) {
 			if (config->return_buf[i] !=
-				config->status_value[group + i])
+				config->status_value[group + i]) {
+				DRM_ERROR("mismatch: 0x%x\n",
+					  config->return_buf[i]);
 				break;
+			}
 		}
 
 		if (i == len)
@@ -1379,7 +1382,19 @@ static void _dsi_display_continuous_clk_ctrl(struct dsi_display *display,
 
 	display_for_each_ctrl(i, display) {
 		ctrl = &display->ctrl[i];
-		dsi_ctrl_set_continuous_clk(ctrl->ctrl, enable);
+
+		/**
+		 * For phy ver 4.0 chipsets, configure DSI controller and
+		 * DSI PHY to force clk lane to HS mode always whereas
+		 * for other phy ver chipsets, configure DSI controller only.
+		 */
+		if (ctrl->phy->hw.ops.set_continuous_clk) {
+			dsi_ctrl_hs_req_sel(ctrl->ctrl, true);
+			dsi_ctrl_set_continuous_clk(ctrl->ctrl, enable);
+			dsi_phy_set_continuous_clk(ctrl->phy, enable);
+		} else {
+			dsi_ctrl_set_continuous_clk(ctrl->ctrl, enable);
+		}
 	}
 }
 
@@ -2841,7 +2856,9 @@ static int dsi_display_ctrl_init(struct dsi_display *display)
 	} else {
 		display_for_each_ctrl(i, display) {
 			ctrl = &display->ctrl[i];
-			rc = dsi_ctrl_update_host_init_state(ctrl->ctrl, true);
+			rc = dsi_ctrl_update_host_state(ctrl->ctrl,
+							DSI_CTRL_OP_HOST_INIT,
+							true);
 			if (rc)
 				pr_debug("host init update failed rc=%d\n", rc);
 		}
@@ -2925,6 +2942,25 @@ static int dsi_display_ctrl_host_disable(struct dsi_display *display)
 	struct dsi_display_ctrl *m_ctrl, *ctrl;
 
 	m_ctrl = &display->ctrl[display->cmd_master_idx];
+	/*
+	 * For platforms where ULPS is controlled by DSI controller block,
+	 * do not disable dsi controller block if lanes are to be
+	 * kept in ULPS during suspend. So just update the SW state
+	 * and return early.
+	 */
+	if (display->panel->ulps_suspend_enabled &&
+	    !m_ctrl->phy->hw.ops.ulps_ops.ulps_request) {
+		display_for_each_ctrl(i, display) {
+			ctrl = &display->ctrl[i];
+			rc = dsi_ctrl_update_host_state(ctrl->ctrl,
+							DSI_CTRL_OP_HOST_ENGINE,
+							false);
+			if (rc)
+				pr_debug("host state update failed %d\n", rc);
+		}
+		return rc;
+	}
+
 	display_for_each_ctrl(i, display) {
 		ctrl = &display->ctrl[i];
 		if (!ctrl->ctrl || (ctrl == m_ctrl))
@@ -3433,6 +3469,7 @@ static int dsi_display_clocks_init(struct dsi_display *display)
 			if (dyn_clk_caps->dyn_clk_support &&
 				(display->panel->panel_mode ==
 					 DSI_OP_VIDEO_MODE)) {
+
 				if (dsi_display_check_prefix(src_byte,
 							clk_name))
 					src->byte_clk = NULL;
@@ -4055,19 +4092,18 @@ static int dsi_display_res_init(struct dsi_display *display)
 				display->parser_node,
 				display->display_type,
 				display->cmdline_topology);
+	if (IS_ERR_OR_NULL(display->panel)) {
+		rc = PTR_ERR(display->panel);
+		pr_err("failed to get panel, rc=%d\n", rc);
+		display->panel = NULL;
+		goto error_ctrl_put;
+	}
 
 	display_for_each_ctrl(i, display) {
 		struct msm_dsi_phy *phy = display->ctrl[i].phy;
 
 		phy->cfg.force_clk_lane_hs =
 			display->panel->host_config.force_hs_clk_lane;
-	}
-
-	if (IS_ERR_OR_NULL(display->panel)) {
-		rc = PTR_ERR(display->panel);
-		pr_err("failed to get panel, rc=%d\n", rc);
-		display->panel = NULL;
-		goto error_ctrl_put;
 	}
 
 	rc = dsi_display_parse_lane_map(display);
@@ -4241,7 +4277,7 @@ static bool dsi_display_is_seamless_dfps_possible(
 }
 
 static int dsi_display_update_dsi_bitrate(struct dsi_display *display,
-			u32 bit_clk_rate)
+					  u32 bit_clk_rate)
 {
 	int rc = 0;
 	int i;
@@ -4842,21 +4878,21 @@ static int dsi_display_set_mode_sub(struct dsi_display *display,
 		if (display->panel->panel_mode == DSI_OP_VIDEO_MODE) {
 			rc = dsi_display_dynamic_clk_switch_vid(display, mode);
 			if (rc)
-			pr_err("dynamic clk change failed %d\n", rc);
-		/*
-		 * skip rest of the opearations since
-		 * dsi_display_dynamic_clk_switch_vid() already takes
-		 * care of them.
-		 */
+				pr_err("dynamic clk change failed %d\n", rc);
+			/*
+			 * skip rest of the opearations since
+			 * dsi_display_dynamic_clk_switch_vid() already takes
+			 * care of them.
+			 */
 			return rc;
 		} else if (display->panel->panel_mode == DSI_OP_CMD_MODE) {
 			clk_rate = mode->timing.clk_rate_hz;
 			rc = dsi_display_dynamic_clk_configure_cmd(display,
-				clk_rate);
-		if (rc) {
-			pr_err("Failed to configure dynamic clk\n");
-			return rc;
-		}
+					clk_rate);
+			if (rc) {
+				pr_err("Failed to configure dynamic clk\n");
+				return rc;
+			}
 		}
 	}
 
@@ -5172,7 +5208,7 @@ static ssize_t sysfs_dynamic_dsi_clk_read(struct device *dev,
 static ssize_t sysfs_dynamic_dsi_clk_write(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
-	int rc = count;
+	int rc = 0;
 	int clk_rate;
 	struct dsi_display *display;
 
@@ -5201,6 +5237,8 @@ static ssize_t sysfs_dynamic_dsi_clk_write(struct device *dev,
 	rc = dsi_display_dynamic_clk_configure_cmd(display, clk_rate);
 	if (rc)
 		pr_err("Failed to configure dynamic clk\n");
+	else
+		rc = count;
 
 	mutex_unlock(&dsi_display_clk_mutex);
 	mutex_unlock(&display->display_lock);
@@ -6109,7 +6147,7 @@ static struct dsi_display_ext_bridge *dsi_display_ext_get_bridge(
 		sde_conn = to_sde_connector(conn_iter);
 		if (sde_conn->encoder == bridge->encoder) {
 			display = sde_conn->display;
-			for (i = 0; i < display->ctrl_count; i++) {
+			display_for_each_ctrl(i, display) {
 				if (display->ext_bridge[i].bridge == bridge)
 					return &display->ext_bridge[i];
 			}
@@ -6282,6 +6320,9 @@ int dsi_display_drm_ext_bridge_init(struct dsi_display *display,
 
 		/* return if ext bridge is already initialized */
 		if (ext_bridge_info->bridge)
+			return 0;
+
+		if (!display->panel->host_config.ext_bridge_mode)
 			return 0;
 
 		ext_bridge = of_drm_find_bridge(ext_bridge_info->node_of);
@@ -7382,7 +7423,8 @@ int dsi_display_prepare(struct dsi_display *display)
 	if (mode->dsi_mode_flags & DSI_MODE_FLAG_DMS) {
 		if (display->is_cont_splash_enabled) {
 			pr_err("DMS is not supposed to be set on first frame\n");
-			return -EINVAL;
+			rc = -EINVAL;
+			goto error;
 		}
 		/* update dsi ctrl for new mode */
 		rc = dsi_display_pre_switch(display);
@@ -7578,7 +7620,7 @@ static int dsi_display_qsync(struct dsi_display *display, bool enable)
 
 	mutex_lock(&display->display_lock);
 
-	for (i = 0; i < display->ctrl_count; i++) {
+	display_for_each_ctrl(i, display) {
 
 		if (enable) {
 			/* send the commands to enable qsync */

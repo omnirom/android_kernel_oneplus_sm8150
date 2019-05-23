@@ -561,7 +561,6 @@ static struct clk_osm *osm_configure_policy(struct cpufreq_policy *policy)
 		if (parent != c_parent)
 			continue;
 
-		/* cpumask_set_cpu(cpu, policy->cpus); */
 		cpumask_set_cpu(cpu, &c->related_cpus);
 		if (n->core_num == 0)
 			first = n;

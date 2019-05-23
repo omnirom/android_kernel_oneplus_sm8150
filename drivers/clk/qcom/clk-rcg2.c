@@ -392,21 +392,21 @@ static int clk_rcg2_determine_floor_rate(struct clk_hw *hw,
 }
 
 static bool clk_rcg2_current_config(struct clk_rcg2 *rcg,
-		const struct freq_tbl *f)
+				    const struct freq_tbl *f)
 {
 	struct clk_hw *hw = &rcg->clkr.hw;
 	u32 cfg, mask, new_cfg;
 	int index;
 
 	if (rcg->mnd_width) {
-	mask = BIT(rcg->mnd_width) - 1;
-	regmap_read(rcg->clkr.regmap, rcg->cmd_rcgr + M_REG, &cfg);
-	if ((cfg & mask) != (f->m & mask))
-		return false;
+		mask = BIT(rcg->mnd_width) - 1;
+		regmap_read(rcg->clkr.regmap, rcg->cmd_rcgr + M_REG, &cfg);
+		if ((cfg & mask) != (f->m & mask))
+			return false;
 
-	regmap_read(rcg->clkr.regmap, rcg->cmd_rcgr + N_REG, &cfg);
-	if ((cfg & mask) != (~(f->n - f->m) & mask))
-	return false;
+		regmap_read(rcg->clkr.regmap, rcg->cmd_rcgr + N_REG, &cfg);
+		if ((cfg & mask) != (~(f->n - f->m) & mask))
+			return false;
 	}
 
 	mask = (BIT(rcg->hid_width) - 1) | CFG_SRC_SEL_MASK;
@@ -419,7 +419,7 @@ static bool clk_rcg2_current_config(struct clk_rcg2 *rcg,
 	regmap_read(rcg->clkr.regmap, rcg->cmd_rcgr + CFG_REG, &cfg);
 
 	if (new_cfg != (cfg & mask))
-		 return false;
+		return false;
 
 	return true;
 }
@@ -1166,8 +1166,7 @@ static int clk_pixel_set_rate(struct clk_hw *hw, unsigned long rate,
 		f.n = frac->den;
 
 		if (clk_rcg2_current_config(rcg, &f))
-		return 0;
-
+			return 0;
 		return clk_rcg2_configure(rcg, &f);
 	}
 	return -EINVAL;
