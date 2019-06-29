@@ -691,6 +691,8 @@ int qrtr_endpoint_post(struct qrtr_endpoint *ep, const void *data, size_t len)
 	int frag = false;
 	unsigned int ver;
 	size_t hdrlen;
+	struct qrtr_ctrl_pkt *pkt;
+	static __le32 src_port = 0xff;
 
 	if (len & 3)
 		return -EINVAL;
@@ -757,7 +759,6 @@ int qrtr_endpoint_post(struct qrtr_endpoint *ep, const void *data, size_t len)
 	    cb->type != QRTR_TYPE_RESUME_TX)
 		goto err;
 
-	__pm_wakeup_event(node->ws, 0);
 
 	if (frag) {
 		skb->data_len = size;
@@ -766,6 +767,18 @@ int qrtr_endpoint_post(struct qrtr_endpoint *ep, const void *data, size_t len)
 	} else {
 		skb_put_data(skb, data + hdrlen, size);
 	}
+
+	if (node->ws && node->nid == 0)
+		if (skb->len == sizeof(*pkt))
+			pkt = (void *)skb->data;
+			//Location service of id is 0x10
+			if (le32_to_cpu(pkt->server.service) == 0x10) {
+				src_port = le32_to_cpu(pkt->server.port);
+				__pm_wakeup_event(node->ws, 0);
+
+			} else if (cb->src_port == src_port) {
+				__pm_wakeup_event(node->ws, 0);
+			}
 	qrtr_log_rx_msg(node, skb);
 
 	skb_queue_tail(&node->rx_queue, skb);
