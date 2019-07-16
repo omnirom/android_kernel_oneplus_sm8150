@@ -125,4 +125,5 @@ struct cam_sensor_ctrl_t {
 	uint16_t pipeline_delay;
 };
 
+void cam_request_timeout_ws(void);
 #endif /* _CAM_SENSOR_DEV_H_ */

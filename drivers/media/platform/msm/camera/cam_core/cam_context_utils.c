@@ -492,9 +492,11 @@ int32_t cam_context_prepare_dev_to_hw(struct cam_context *ctx,
 			ctx->dev_name, ctx->ctx_id);
 
 	return rc;
+
 put_ctx_ref:
-	for (j; j >= 0; j--)
+	for (--j; j >= 0; j--)
 		cam_context_putref(ctx);
+
 put_ref:
 	for (--i; i >= 0; i--) {
 		if (cam_sync_put_obj_ref(req->out_map_entries[i].sync_id))
@@ -578,7 +580,7 @@ int32_t cam_context_acquire_dev_to_hw(struct cam_context *ctx,
 	req_hdl_param.media_entity_flag = 0;
 	req_hdl_param.priv = ctx;
 	req_hdl_param.ops = ctx->crm_ctx_intf;
-	req_hdl_param.dev_id = ctx->dev_id;
+
 	ctx->dev_hdl = cam_create_device_hdl(&req_hdl_param);
 	if (ctx->dev_hdl <= 0) {
 		rc = -EFAULT;

@@ -20,6 +20,8 @@
 #define ESOC_HOOK_MDM_CRASH	0x0001 /* In crash handling path */
 #define ESOC_HOOK_MDM_DOWN	0x0002 /* MDM about to go down */
 
+extern int oem_get_download_mode(void);
+
 struct esoc_client_hook {
 	char *name;
 	void *priv;

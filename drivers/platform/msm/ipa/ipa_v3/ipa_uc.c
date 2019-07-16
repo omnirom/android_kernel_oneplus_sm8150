@@ -540,6 +540,7 @@ static void ipa3_uc_response_hdlr(enum ipa_irq_type interrupt,
 
 void ipa3_uc_map_cntr_reg_notify(void)
 {
+	IPA_ACTIVE_CLIENTS_INC_SPECIAL("QMI_IPA_UC");
 	IPAWANDBG("complete the mapping of G_RD_CNTR register\n");
 	IPA_ACTIVE_CLIENTS_INC_SPECIAL("QMI_IPA_UC");
 	ipa3_uc_send_cmd(0,
