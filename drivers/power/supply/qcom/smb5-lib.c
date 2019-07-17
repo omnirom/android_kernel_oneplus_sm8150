@@ -1231,9 +1231,6 @@ static void smblib_uusb_removal(struct smb_charger *chg)
 
 	cancel_delayed_work_sync(&chg->pl_enable_work);
 
-	if (chg->wa_flags & CHG_TERMINATION_WA)
-		alarm_cancel(&chg->chg_termination_alarm);
-
 	if (chg->wa_flags & BOOST_BACK_WA) {
 		data = chg->irq_info[SWITCHER_POWER_OK_IRQ].irq_data;
 		if (data) {
@@ -5682,7 +5679,6 @@ static bool smblib_src_lpd(struct smb_charger *chg)
 		if (check_boot_mode_disabled_lpd(chg))
 			alarm_start_relative(&chg->lpd_recheck_timer,
 						ms_to_ktime(60000));
-		power_supply_changed(chg->usb_psy);
 	} else {
 		chg->lpd_reason = LPD_NONE;
 		chg->typec_mode = smblib_get_prop_typec_mode(chg);
@@ -5810,9 +5806,6 @@ static void typec_src_removal(struct smb_charger *chg)
 	}
 
 	cancel_delayed_work_sync(&chg->pl_enable_work);
-
-	if (chg->wa_flags & CHG_TERMINATION_WA)
-		alarm_cancel(&chg->chg_termination_alarm);
 
 	/* reset input current limit voters */
 	vote(chg->usb_icl_votable, SW_ICL_MAX_VOTER, true, 500000);
@@ -6176,7 +6169,7 @@ irqreturn_t typec_attach_detach_irq_handler(int irq, void *data)
 
 		if (chg->lpd_stage == LPD_STAGE_FLOAT_CANCEL)
 			schedule_delayed_work(&chg->lpd_detach_work,
-					msecs_to_jiffies(1000));
+					msecs_to_jiffies(100));
 	}
 
 	power_supply_changed(chg->usb_psy);
@@ -6194,12 +6187,14 @@ irqreturn_t dc_plugin_irq_handler(int irq, void *data)
 	int rc, wireless_vout = 0;
 	int sec_charger;
 
-	rc = smblib_get_prop_vph_voltage_now(chg, &pval);
+	rc = iio_read_channel_processed(chg->iio.vph_v_chan,
+			&wireless_vout);
 	if (rc < 0)
 		return IRQ_HANDLED;
 
-	/* 2*VPH, with a granularity of 100mV */
-	wireless_vout = ((pval.intval * 2) / 100000) * 100000;
+	wireless_vout *= 2;
+	wireless_vout /= 100000;
+	wireless_vout *= 100000;
 
 	rc = smblib_is_input_present(chg, &input_present);
 	if (rc < 0)
@@ -6234,8 +6229,6 @@ irqreturn_t dc_plugin_irq_handler(int irq, void *data)
 				dev_err(chg->dev, "Couldn't disable secondary charger rc=%d\n",
 					rc);
 		}
-
-		vote(chg->dc_suspend_votable, CHG_TERMINATION_VOTER, false, 0);
 	}
 
 	power_supply_changed(chg->dc_psy);
@@ -6257,7 +6250,8 @@ irqreturn_t high_duty_cycle_irq_handler(int irq, void *data)
 	 * the flag cleared in the delayed work queue, to avoid any IRQ
 	 * storming during the delays
 	 */
-	vote(chg->hdc_irq_disable_votable, HDC_IRQ_VOTER, true, 0);
+	if (chg->irq_info[HIGH_DUTY_CYCLE_IRQ].irq)
+		disable_irq_nosync(chg->irq_info[HIGH_DUTY_CYCLE_IRQ].irq);
 
 	schedule_delayed_work(&chg->clear_hdc_work, msecs_to_jiffies(60));
 
@@ -10005,6 +9999,7 @@ int smblib_init(struct smb_charger *chg)
 	mutex_init(&chg->smb_lock);
 	mutex_init(&chg->write_lock);
 	mutex_init(&chg->sw_dash_lock);
+        mutex_init(&chg->irq_status_lock);
 	INIT_WORK(&chg->bms_update_work, bms_update_work);
 	INIT_WORK(&chg->pl_update_work, pl_update_work);
 	INIT_WORK(&chg->jeita_update_work, jeita_update_work);
