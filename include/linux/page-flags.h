@@ -106,12 +106,6 @@ enum pageflags {
 	PG_young,
 	PG_idle,
 #endif
-#ifdef CONFIG_MEMPLUS
-	PG_willneed,
-#endif
-#ifdef CONFIG_SMART_BOOST
-	PG_uidlru,
-#endif
 	__NR_PAGEFLAGS,
 
 	/* Filesystems */
@@ -277,12 +271,6 @@ PAGEFLAG(Referenced, referenced, PF_HEAD)
 PAGEFLAG(Dirty, dirty, PF_HEAD) TESTSCFLAG(Dirty, dirty, PF_HEAD)
 	__CLEARPAGEFLAG(Dirty, dirty, PF_HEAD)
 PAGEFLAG(LRU, lru, PF_HEAD) __CLEARPAGEFLAG(LRU, lru, PF_HEAD)
-#ifdef CONFIG_MEMPLUS
-PAGEFLAG(Willneed, willneed, PF_HEAD) __CLEARPAGEFLAG(Willneed, willneed, PF_HEAD)
-#endif
-#ifdef CONFIG_SMART_BOOST
-PAGEFLAG(UIDLRU, uidlru, PF_HEAD) __CLEARPAGEFLAG(UIDLRU, uidlru, PF_HEAD)
-#endif
 PAGEFLAG(Active, active, PF_HEAD) __CLEARPAGEFLAG(Active, active, PF_HEAD)
 	TESTCLEARFLAG(Active, active, PF_HEAD)
 __PAGEFLAG(Slab, slab, PF_NO_TAIL)
@@ -345,17 +333,8 @@ static __always_inline int PageSwapCache(struct page *page)
 	return PageSwapBacked(page) && test_bit(PG_swapcache, &page->flags);
 
 }
-#include <oneplus/memplus/memplus.h>
-static __always_inline void ClearPageSwapCache(struct page *page)
-{
-	memplus_move_swapcache_to_anon_lru(page);
-}
-
-static __always_inline void SetPageSwapCache(struct page *page)
-{
-	memplus_move_anon_to_swapcache_lru(page);
-}
-
+SETPAGEFLAG(SwapCache, swapcache, PF_NO_TAIL)
+CLEARPAGEFLAG(SwapCache, swapcache, PF_NO_TAIL)
 #else
 PAGEFLAG_FALSE(SwapCache)
 #endif

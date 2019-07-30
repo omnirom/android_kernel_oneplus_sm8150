@@ -109,12 +109,7 @@ static bool __munlock_isolate_lru_page(struct page *page, bool getpage)
 		if (getpage)
 			get_page(page);
 		ClearPageLRU(page);
-#ifdef CONFIG_SMART_BOOST
-		del_page_from_lru_list(page, lruvec, page_lru(page),
-					PageUIDLRU(page) ? true:false);
-#else
 		del_page_from_lru_list(page, lruvec, page_lru(page));
-#endif
 		return true;
 	}
 

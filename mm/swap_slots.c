@@ -264,13 +264,8 @@ static int refill_swap_slots_cache(struct swap_slots_cache *cache)
 
 	cache->cur = 0;
 	if (swap_slot_cache_active)
-#ifdef CONFIG_MEMPLUS
-		cache->nr = get_swap_pages(SWAP_SLOTS_CACHE_SIZE, false,
-					   cache->slots, SLOW_BDV);
-#else
 		cache->nr = get_swap_pages(SWAP_SLOTS_CACHE_SIZE, false,
 					   cache->slots);
-#endif
 
 	return cache->nr;
 }
@@ -309,11 +304,8 @@ direct_free:
 
 	return 0;
 }
-#ifdef CONFIG_MEMPLUS
-swp_entry_t get_swap_page(struct page *page, unsigned long swap_bdv)
-#else
+
 swp_entry_t get_swap_page(struct page *page)
-#endif
 {
 	swp_entry_t entry, *pentry;
 	struct swap_slots_cache *cache;
@@ -322,11 +314,7 @@ swp_entry_t get_swap_page(struct page *page)
 
 	if (PageTransHuge(page)) {
 		if (IS_ENABLED(CONFIG_THP_SWAP))
-#ifdef CONFIG_MEMPLUS
-			get_swap_pages(1, true, &entry, swap_bdv);
-#else
 			get_swap_pages(1, true, &entry);
-#endif
 		return entry;
 	}
 
@@ -359,11 +347,8 @@ repeat:
 		if (entry.val)
 			return entry;
 	}
-#ifdef CONFIG_MEMPLUS
-	get_swap_pages(1, false, &entry, swap_bdv);
-#else
+
 	get_swap_pages(1, false, &entry);
-#endif
 
 	return entry;
 }
