@@ -468,6 +468,14 @@ struct cam_ife_csid_path_cfg {
  * @irq_debug_cnt:            Counter to track sof irq's when above flag is set.
  * @error_irq_count           Error IRQ count, if continuous error irq comes
  *                            need to stop the CSID and mask interrupts.
+ * @device_enabled            Device enabled will set once CSID powered on and
+ *                            initial configuration are done.
+ * @lock_state                csid spin lock
+ * @dual_usage                usage type, dual ife or single ife
+ * @init_frame_drop           Initial frame drop number
+ * @res_sof_cnt               path resource sof count value. it used for initial
+ *                            frame drop
+ * @first_sof_ts              flag to mark the first sof has been registered
  *
  */
 struct cam_ife_csid_hw {
@@ -496,6 +504,10 @@ struct cam_ife_csid_hw {
 	uint32_t                         error_irq_count;
 	uint32_t                         device_enabled;
 	spinlock_t                       lock_state;
+	uint32_t                         dual_usage;
+	uint32_t                         init_frame_drop;
+	uint32_t                         res_sof_cnt[CAM_IFE_PIX_PATH_RES_MAX];
+	uint32_t                         first_sof_ts;
 };
 
 int cam_ife_csid_hw_probe_init(struct cam_hw_intf  *csid_hw_intf,

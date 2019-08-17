@@ -599,21 +599,24 @@ end:
 
 static void __cam_isp_ctx_send_sof_boot_timestamp(
 	struct cam_isp_context *ctx_isp, uint64_t request_id,
-	uint32_t sof_event_status)
+	uint32_t sof_event_status, uint64_t delta_ts)
 {
 	struct cam_req_mgr_message   req_msg;
 
 	req_msg.session_hdl = ctx_isp->base->session_hdl;
 	req_msg.u.frame_msg.frame_id = ctx_isp->frame_id;
 	req_msg.u.frame_msg.request_id = request_id;
-	req_msg.u.frame_msg.timestamp = ctx_isp->boot_timestamp;
 	req_msg.u.frame_msg.link_hdl = ctx_isp->base->link_hdl;
 	req_msg.u.frame_msg.sof_status = sof_event_status;
 
+	req_msg.u.frame_msg.timestamp = ctx_isp->prev_boot_timestamp + delta_ts;
+
 	CAM_DBG(CAM_ISP,
-		"request id:%lld frame number:%lld boot time stamp:0x%llx",
-		 request_id, ctx_isp->frame_id,
-		 ctx_isp->boot_timestamp);
+		"req id:%lld frame num:%lld bt_ts:0x%llx pre_bt_ts:0x%llx diff:0x%llx",
+		request_id, ctx_isp->frame_id,
+		ctx_isp->boot_timestamp, ctx_isp->prev_boot_timestamp,
+		delta_ts);
+
 
 	if (cam_req_mgr_notify_message(&req_msg,
 		V4L_EVENT_CAM_REQ_MGR_SOF_BOOT_TS,
@@ -621,6 +624,8 @@ static void __cam_isp_ctx_send_sof_boot_timestamp(
 		CAM_ERR(CAM_ISP,
 			"Error in notifying the boot time for req id:%lld",
 			request_id);
+
+	ctx_isp->prev_boot_timestamp = req_msg.u.frame_msg.timestamp;
 }
 
 
@@ -629,6 +634,7 @@ static void __cam_isp_ctx_send_sof_timestamp(
 	uint32_t sof_event_status)
 {
 	struct cam_req_mgr_message   req_msg;
+	uint64_t delta_ts;
 
 	req_msg.session_hdl = ctx_isp->base->session_hdl;
 	req_msg.u.frame_msg.frame_id = ctx_isp->frame_id;
@@ -638,9 +644,9 @@ static void __cam_isp_ctx_send_sof_timestamp(
 	req_msg.u.frame_msg.sof_status = sof_event_status;
 
 	CAM_DBG(CAM_ISP,
-		"request id:%lld frame number:%lld SOF time stamp:0x%llx",
+		"request id:%lld frame number:%lld SOF time stamp:0x%llx, Prev SOF time:0x%llx",
 		 request_id, ctx_isp->frame_id,
-		ctx_isp->sof_timestamp_val);
+		ctx_isp->sof_timestamp_val, ctx_isp->prev_sof_timestamp_val);
 	CAM_DBG(CAM_ISP, "sof status:%d", sof_event_status);
 
 	if (cam_req_mgr_notify_message(&req_msg,
@@ -648,9 +654,17 @@ static void __cam_isp_ctx_send_sof_timestamp(
 		CAM_ERR(CAM_ISP,
 			"Error in notifying the sof time for req id:%lld",
 			request_id);
+	delta_ts = ctx_isp->sof_timestamp_val -
+			ctx_isp->prev_sof_timestamp_val;
 
 	__cam_isp_ctx_send_sof_boot_timestamp(ctx_isp,
-		request_id, sof_event_status);
+		request_id, sof_event_status,
+		(ctx_isp->prev_sof_timestamp_val == 0) ?
+			ctx_isp->boot_timestamp :
+			delta_ts);
+
+	ctx_isp->prev_sof_timestamp_val =
+			ctx_isp->sof_timestamp_val;
 
 }
 
@@ -748,6 +762,7 @@ static int __cam_isp_ctx_notify_sof_in_activated_state(
 			notify.dev_hdl = ctx->dev_hdl;
 			notify.frame_id = ctx_isp->frame_id;
 			notify.trigger = CAM_TRIGGER_POINT_SOF;
+			notify.sof_timestamp_val = ctx_isp->sof_timestamp_val;
 
 			ctx->ctx_crm_intf->notify_trigger(&notify);
 			CAM_DBG(CAM_ISP, "Notify CRM  SOF frame %lld ctx %u",
@@ -1387,6 +1402,7 @@ static int __cam_isp_ctx_fs2_sof_in_sof_state(
 			notify.dev_hdl = ctx->dev_hdl;
 			notify.frame_id = ctx_isp->frame_id;
 			notify.trigger = CAM_TRIGGER_POINT_SOF;
+			notify.sof_timestamp_val = ctx_isp->sof_timestamp_val;
 
 			ctx->ctx_crm_intf->notify_trigger(&notify);
 			CAM_DBG(CAM_ISP, "Notify CRM  SOF frame %lld",
@@ -1564,6 +1580,7 @@ static int __cam_isp_ctx_fs2_reg_upd_in_applied_state(
 			notify.dev_hdl = ctx->dev_hdl;
 			notify.frame_id = ctx_isp->frame_id;
 			notify.trigger = CAM_TRIGGER_POINT_SOF;
+			notify.sof_timestamp_val = ctx_isp->sof_timestamp_val;
 
 			ctx->ctx_crm_intf->notify_trigger(&notify);
 			CAM_DBG(CAM_ISP, "Notify CRM  SOF frame %lld",
@@ -2152,6 +2169,7 @@ static int __cam_isp_ctx_rdi_only_sof_in_top_state(
 		notify.dev_hdl = ctx->dev_hdl;
 		notify.frame_id = ctx_isp->frame_id;
 		notify.trigger = CAM_TRIGGER_POINT_SOF;
+		notify.sof_timestamp_val = ctx_isp->sof_timestamp_val;
 
 		ctx->ctx_crm_intf->notify_trigger(&notify);
 		CAM_DBG(CAM_ISP, "Notify CRM  SOF frame %lld",
@@ -2343,6 +2361,7 @@ static int __cam_isp_ctx_rdi_only_sof_in_bubble_state(
 		notify.dev_hdl = ctx->dev_hdl;
 		notify.frame_id = ctx_isp->frame_id;
 		notify.trigger = CAM_TRIGGER_POINT_SOF;
+		notify.sof_timestamp_val = ctx_isp->sof_timestamp_val;
 
 		ctx->ctx_crm_intf->notify_trigger(&notify);
 		CAM_DBG(CAM_ISP, "Notify CRM  SOF frame %lld",
@@ -2413,6 +2432,7 @@ static int __cam_isp_ctx_rdi_only_reg_upd_in_bubble_applied_state(
 		notify.dev_hdl = ctx->dev_hdl;
 		notify.frame_id = ctx_isp->frame_id;
 		notify.trigger = CAM_TRIGGER_POINT_SOF;
+		notify.sof_timestamp_val = ctx_isp->sof_timestamp_val;
 
 		ctx->ctx_crm_intf->notify_trigger(&notify);
 		CAM_DBG(CAM_ISP, "Notify CRM  SOF frame %lld",
@@ -3435,6 +3455,8 @@ static int __cam_isp_ctx_stop_dev_in_activated_unlock(
 	ctx_isp->req_info.last_applied_time_stamp = 0;
 	ctx_isp->req_info.last_bufdone_time_stamp = 0;
 	ctx_isp->req_info.last_reported_id_time_stamp = 0;
+	ctx_isp->prev_sof_timestamp_val = 0;
+	ctx_isp->prev_boot_timestamp = 0;
 
 	atomic_set(&ctx_isp->process_bubble, 0);
 
