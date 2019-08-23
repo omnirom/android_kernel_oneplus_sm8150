@@ -4043,11 +4043,8 @@ static inline void __unprepare_ahb2axi_bridge(struct venus_hfi_device *device,
 	if (version != (0x5 << 28 | 0x10 << 16))
 		return;
 
-	if (!(device->intr_status & VIDC_WRAPPER_INTR_STATUS_A2HWD_BMSK))
-		return;
-
 	dprintk(VIDC_ERR,
-		"reset axi cbcr to recover from hung\n");
+		"reset axi cbcr to recover\n");
 
 	/* read registers */
 	axi0_cbcr_status = __read_gcc_register(device, VIDEO_GCC_AXI0_CBCR);
@@ -4811,11 +4808,13 @@ static void __venus_power_off(struct venus_hfi_device *device,
 	if (!(device->intr_status & VIDC_WRAPPER_INTR_STATUS_A2HWD_BMSK))
 		disable_irq_nosync(device->hal_data->irq);
 
-	version = __read_register(device, VIDC_WRAPPER_HW_VERSION);
+	if (axi_reset)
+		version = __read_register(device, VIDC_WRAPPER_HW_VERSION);
 
 	__disable_unprepare_clks(device);
 
-	__unprepare_ahb2axi_bridge(device, version);
+	if (axi_reset)
+		__unprepare_ahb2axi_bridge(device, version);
 
 	device->intr_status = 0;
 
