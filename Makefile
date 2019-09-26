@@ -531,7 +531,6 @@ config: scripts_basic outputmakefile FORCE
 	$(Q)$(MAKE) $(build)=scripts/kconfig $@
 
 %config: scripts_basic outputmakefile FORCE
-	$(shell cp -rf $(KBUILD_SRC)/../oneplus/ $(KBUILD_SRC)/../)
 	$(Q)$(MAKE) $(build)=scripts/kconfig $@
 
 else
@@ -1302,6 +1301,7 @@ headers_install: __headers
 	$(Q)$(MAKE) $(hdr-inst)=include/uapi dst=include
 	$(Q)$(MAKE) $(hdr-inst)=arch/$(hdr-arch)/include/uapi $(hdr-dst)
 	$(Q)$(MAKE) $(hdr-inst)=techpack
+
 
 PHONY += headers_check_all
 headers_check_all: headers_install_all
