@@ -44,9 +44,13 @@ static int atl_do_open(struct atl_nic *nic)
 {
 	int ret;
 
-	ret = atl_start_rings(nic);
-	if (ret)
-		return ret;
+/* out: */
+	return ret;
+}
+
+static void atl_stop(struct atl_nic *nic, bool full)
+{
+	atl_stop_rings(nic);
 
 	if (!atl_keep_link)
 		atl_link_up(nic);
@@ -226,10 +230,68 @@ void atl_schedule_work(struct atl_nic *nic)
 		queue_work(atl_wq, &nic->work);
 }
 
+int atl_do_reset(struct atl_nic *nic)
+{
+	bool was_up = netif_running(nic->ndev);
+	struct atl_hw *hw = &nic->hw;
+	int ret;
+
+	set_bit(ATL_ST_RESETTING, &hw->state);
+
+	rtnl_lock();
+
+	atl_stop(nic, true);
+
+	ret = atl_hw_reset(hw);
+	if (ret) {
+		atl_nic_err("HW reset failed, re-trying\n");
+		if (!test_and_set_bit(ATL_ST_DETACHED, &hw->state))
+			netif_device_detach(nic->ndev);
+		goto out;
+	}
+	clear_bit(ATL_ST_RESETTING, &hw->state);
+
+	if (was_up) {
+		ret = atl_start(nic);
+		if (ret)
+			goto out;
+	}
+
+	if (test_and_clear_bit(ATL_ST_DETACHED, &hw->state))
+		netif_device_attach(nic->ndev);
+
+out:
+	rtnl_unlock();
+	return ret;
+}
+
+static int atl_check_reset(struct atl_nic *nic)
+{
+	struct atl_hw *hw = &nic->hw;
+	bool reset;
+
+	if (!test_bit(ATL_ST_ENABLED, &hw->state))
+		/* We're suspending, postpone resets till resume */
+		return 0;
+
+	reset = test_and_clear_bit(ATL_ST_RESET_NEEDED, &hw->state);
+
+	if (!reset)
+		return 0;
+
+	return atl_do_reset(nic);
+}
+
 static void atl_work(struct work_struct *work)
 {
 	struct atl_nic *nic = container_of(work, struct atl_nic, work);
 
+	clear_bit(ATL_ST_WORK_SCHED, &hw->state);
+
+	atl_fw_watchdog(hw);
+	ret = atl_check_reset(nic);
+	if (ret)
+		goto out;
 	atl_refresh_link(nic);
 	clear_bit(ATL_ST_WORK_SCHED, &nic->state);
 }
@@ -481,8 +543,8 @@ static int atl_suspend_common(struct device *dev, bool deep)
 	if (netif_running(nic->ndev))
 		atl_do_close(nic);
 
-	if (deep && atl_keep_link)
-		atl_link_down(nic);
+	atl_clear_rdm_cache(nic);
+	atl_clear_tdm_cache(nic);
 
 	if (deep && nic->flags & ATL_FL_WOL) {
 		ret = hw->mcp.ops->enable_wol(hw);

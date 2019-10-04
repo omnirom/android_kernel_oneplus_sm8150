@@ -18,7 +18,7 @@
 #include <linux/netdevice.h>
 #include <linux/moduleparam.h>
 
-#define ATL_VERSION "1.0.19"
+#define ATL_VERSION "1.0.22"
 
 struct atl_nic;
 
@@ -270,6 +270,7 @@ enum atl_priv_flags {
 	ATL_PF_LPI_TX_PHY,
 	ATL_PF_STATS_RESET,
 	ATL_PF_STRIP_PAD,
+	ATL_PF_MEDIA_DETECT,
 };
 
 enum atl_priv_flag_bits {
@@ -290,9 +291,10 @@ enum atl_priv_flag_bits {
 	ATL_DEF_PF_BIT(STATS_RESET),
 
 	ATL_DEF_PF_BIT(STRIP_PAD),
+	ATL_DEF_PF_BIT(MEDIA_DETECT),
 
 	ATL_PF_RW_MASK = ATL_PF_LPB_MASK | ATL_PF_BIT(STATS_RESET) |
-		ATL_PF_BIT(STRIP_PAD),
+		ATL_PF_BIT(STRIP_PAD) | ATL_PF_BIT(MEDIA_DETECT),
 	ATL_PF_RO_MASK = ATL_PF_LPI_MASK,
 };
 
@@ -360,6 +362,8 @@ int atl_setup_datapath(struct atl_nic *nic);
 void atl_clear_datapath(struct atl_nic *nic);
 int atl_start_rings(struct atl_nic *nic);
 void atl_stop_rings(struct atl_nic *nic);
+void atl_clear_rdm_cache(struct atl_nic *nic);
+void atl_clear_tdm_cache(struct atl_nic *nic);
 int atl_alloc_rings(struct atl_nic *nic);
 void atl_free_rings(struct atl_nic *nic);
 irqreturn_t atl_ring_irq(int irq, void *priv);
@@ -403,5 +407,9 @@ int atl_mdio_write(struct atl_hw *hw, uint8_t prtad, uint8_t mmd,
 void atl_refresh_rxfs(struct atl_nic *nic);
 void atl_schedule_work(struct atl_nic *nic);
 int atl_hwmon_init(struct atl_nic *nic);
+int atl_update_thermal(struct atl_hw *hw);
+int atl_update_thermal_flag(struct atl_hw *hw, int bit, bool val);
+int atl_verify_thermal_limits(struct atl_hw *hw, struct atl_thermal *thermal);
+int atl_do_reset(struct atl_nic *nic);
 
 #endif
