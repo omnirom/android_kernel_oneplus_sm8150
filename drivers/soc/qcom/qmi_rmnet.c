@@ -55,6 +55,10 @@ MODULE_PARM_DESC(rmnet_wq_frequency, "Frequency of PS check in ms");
 static unsigned int qmi_rmnet_scale_factor = 5;
 #endif
 
+static int
+qmi_rmnet_del_flow(struct net_device *dev, struct tcmsg *tcm,
+		   struct qmi_info *qmi);
+
 struct qmi_elem_info data_ep_id_type_v01_ei[] = {
 	{
 		.data_type	= QMI_SIGNED_4_BYTE_ENUM,
@@ -147,6 +151,8 @@ qmi_rmnet_clean_flow_list(struct qmi_info *qmi, struct net_device *dev,
 		list_del(&bearer->list);
 		kfree(bearer);
 	}
+
+	memset(qos->mq, 0, sizeof(qos->mq));
 }
 
 struct rmnet_flow_map *
@@ -185,17 +191,17 @@ static void qmi_rmnet_update_flow_map(struct rmnet_flow_map *itm,
 	itm->bearer_id = new_map->bearer_id;
 	itm->flow_id = new_map->flow_id;
 	itm->ip_type = new_map->ip_type;
-	itm->tcm_handle = new_map->tcm_handle;
+	itm->mq_idx = new_map->mq_idx;
 }
 
-int qmi_rmnet_flow_control(struct net_device *dev, u32 tcm_handle, int enable)
+int qmi_rmnet_flow_control(struct net_device *dev, u32 mq_idx, int enable)
 {
 	struct netdev_queue *q;
 
-	if (unlikely(tcm_handle >= dev->num_tx_queues))
+	if (unlikely(mq_idx >= dev->num_tx_queues))
 		return 0;
 
-	q = netdev_get_tx_queue(dev, tcm_handle);
+	q = netdev_get_tx_queue(dev, mq_idx);
 	if (unlikely(!q))
 		return 0;
 
@@ -228,69 +234,92 @@ static int qmi_rmnet_add_flow(struct net_device *dev, struct tcmsg *tcm,
 	struct qos_info *qos_info = (struct qos_info *)rmnet_get_qos_pt(dev);
 	struct rmnet_flow_map new_map, *itm;
 	struct rmnet_bearer_map *bearer;
+	struct tcmsg tmp_tcm;
+	struct mq_map *mq;
+	u32 mq_idx;
 
-	if (!qos_info)
+	if (!qos_info || !tcm || tcm->tcm_handle >= MAX_MQ_NUM)
 		return -EINVAL;
 
 	ASSERT_RTNL();
 
 	/* flow activate
 	 * tcm->tcm__pad1 - bearer_id, tcm->tcm_parent - flow_id,
-	 * tcm->tcm_ifindex - ip_type, tcm->tcm_handle - tcm_handle
+	 * tcm->tcm_ifindex - ip_type, tcm->tcm_handle - mq_idx
 	 */
 
 	new_map.bearer_id = tcm->tcm__pad1;
 	new_map.flow_id = tcm->tcm_parent;
 	new_map.ip_type = tcm->tcm_ifindex;
-	new_map.tcm_handle = tcm->tcm_handle;
+	new_map.mq_idx = tcm->tcm_handle;
 	trace_dfc_flow_info(dev->name, new_map.bearer_id, new_map.flow_id,
-			    new_map.ip_type, new_map.tcm_handle, 1);
+			    new_map.ip_type, new_map.mq_idx, 1);
 
+again:
 	spin_lock_bh(&qos_info->qos_lock);
 
 	itm = qmi_rmnet_get_flow_map(qos_info, new_map.flow_id,
 				     new_map.ip_type);
 	if (itm) {
-		qmi_rmnet_update_flow_map(itm, &new_map);
+		pr_debug("%s: stale flow found\n", __func__);
+		tmp_tcm.tcm__pad1 = itm->bearer_id;
+		tmp_tcm.tcm_parent = itm->flow_id;
+		tmp_tcm.tcm_ifindex = itm->ip_type;
+		tmp_tcm.tcm_handle = itm->mq_idx;
+		spin_unlock_bh(&qos_info->qos_lock);
+		qmi_rmnet_del_flow(dev, &tmp_tcm, qmi);
+		goto again;
+	}
+
+	/* Create flow map */
+	itm = kzalloc(sizeof(*itm), GFP_ATOMIC);
+	if (!itm) {
+		spin_unlock_bh(&qos_info->qos_lock);
+		return -ENOMEM;
+	}
+
+	qmi_rmnet_update_flow_map(itm, &new_map);
+	list_add(&itm->list, &qos_info->flow_head);
+
+	/* Create or update bearer map */
+	bearer = qmi_rmnet_get_bearer_map(qos_info, new_map.bearer_id);
+	if (bearer) {
+		bearer->flow_ref++;
 	} else {
-		itm = kzalloc(sizeof(*itm), GFP_ATOMIC);
-		if (!itm) {
+		bearer = kzalloc(sizeof(*bearer), GFP_ATOMIC);
+		if (!bearer) {
 			spin_unlock_bh(&qos_info->qos_lock);
 			return -ENOMEM;
 		}
 
-		qmi_rmnet_update_flow_map(itm, &new_map);
-		list_add(&itm->list, &qos_info->flow_head);
+		bearer->bearer_id = new_map.bearer_id;
+		bearer->flow_ref = 1;
+		bearer->grant_size = qos_info->default_grant;
+		bearer->grant_thresh = qmi_rmnet_grant_per(bearer->grant_size);
+		qos_info->default_grant = DEFAULT_GRANT;
+		list_add(&bearer->list, &qos_info->bearer_head);
+	}
+	itm->bearer = bearer;
 
-		bearer = qmi_rmnet_get_bearer_map(qos_info, new_map.bearer_id);
-		if (bearer) {
-			bearer->flow_ref++;
-		} else {
-			bearer = kzalloc(sizeof(*bearer), GFP_ATOMIC);
-			if (!bearer) {
-				spin_unlock_bh(&qos_info->qos_lock);
-				return -ENOMEM;
-			}
+	/* Update mq map */
+	mq_idx = tcm->tcm_handle;
+	mq = &qos_info->mq[mq_idx];
+	if (!mq->bearer) {
+		mq->bearer = bearer;
+		mq->ancillary = IS_ANCILLARY(new_map.ip_type);
 
-			bearer->bearer_id = new_map.bearer_id;
-			bearer->flow_ref = 1;
-			bearer->grant_size = qos_info->default_grant;
-			bearer->grant_thresh =
-				qmi_rmnet_grant_per(bearer->grant_size);
-			qos_info->default_grant = DEFAULT_GRANT;
-			list_add(&bearer->list, &qos_info->bearer_head);
-		}
-
-		qmi_rmnet_flow_control(dev, itm->tcm_handle,
-				bearer->grant_size > 0 ? 1 : 0);
-
-		trace_dfc_qmi_tc(dev->name, itm->bearer_id, itm->flow_id,
-				 bearer->grant_size, 0, itm->tcm_handle,
+		qmi_rmnet_flow_control(dev, mq_idx,
+				       bearer->grant_size > 0 ? 1 : 0);
+		trace_dfc_qmi_tc(dev->name, itm->bearer_id,
+				 bearer->grant_size, 0, mq_idx,
 				 bearer->grant_size > 0 ? 1 : 0);
+
+	} else if (mq->bearer->bearer_id != new_map.bearer_id) {
+		pr_debug("%s: un-managered bearer %u\n",
+				__func__, new_map.bearer_id);
 	}
 
 	spin_unlock_bh(&qos_info->qos_lock);
-
 	return 0;
 }
 
@@ -301,6 +330,8 @@ qmi_rmnet_del_flow(struct net_device *dev, struct tcmsg *tcm,
 	struct qos_info *qos_info = (struct qos_info *)rmnet_get_qos_pt(dev);
 	struct rmnet_flow_map new_map, *itm;
 	struct rmnet_bearer_map *bearer;
+	struct mq_map *mq;
+	u32 mq_idx;
 
 	if (!qos_info)
 		return -EINVAL;
@@ -322,35 +353,38 @@ qmi_rmnet_del_flow(struct net_device *dev, struct tcmsg *tcm,
 	if (itm) {
 		trace_dfc_flow_info(dev->name, new_map.bearer_id,
 				    new_map.flow_id, new_map.ip_type,
-				    itm->tcm_handle, 0);
-		list_del(&itm->list);
+				    itm->mq_idx, 0);
 
-		/*clear bearer map*/
-		bearer = qmi_rmnet_get_bearer_map(qos_info, new_map.bearer_id);
+		bearer = itm->bearer;
 		if (bearer && --bearer->flow_ref == 0) {
+			/* Remove the bearer from mq map */
+			for (mq_idx = 0; mq_idx < MAX_MQ_NUM; mq_idx++) {
+				mq = &qos_info->mq[mq_idx];
+				if (mq->bearer != bearer)
+					continue;
+
+				mq->bearer = NULL;
+				mq->ancillary = false;
+				qmi_rmnet_reset_txq(dev, mq_idx);
+				qmi_rmnet_flow_control(dev, mq_idx, 1);
+				trace_dfc_qmi_tc(dev->name,
+					new_map.bearer_id, 0, 0, mq_idx, 1);
+			}
+
+			/* Remove from bearer map */
 			list_del(&bearer->list);
 			kfree(bearer);
-
-			/* Purge pending packets for dedicated flow */
-			if (itm->flow_id)
-				qmi_rmnet_reset_txq(dev, itm->tcm_handle);
 		}
 
-		/* Enable flow to allow new flow setup */
-		qmi_rmnet_flow_control(dev, itm->tcm_handle, 1);
-		trace_dfc_qmi_tc(dev->name, itm->bearer_id, itm->flow_id,
-				 0, 0, itm->tcm_handle, 1);
-
+		/* Remove from flow map */
+		list_del(&itm->list);
 		kfree(itm);
 	}
 
-	if (list_empty(&qos_info->flow_head)) {
+	if (list_empty(&qos_info->flow_head))
 		netif_tx_wake_all_queues(dev);
-		trace_dfc_qmi_tc(dev->name, 0xFF, 0, DEFAULT_GRANT, 0, 0, 1);
-	}
 
 	spin_unlock_bh(&qos_info->qos_lock);
-
 	return 0;
 }
 
@@ -681,6 +715,10 @@ int qmi_rmnet_get_queue(struct net_device *dev, struct sk_buff *skb)
 	if (!qos)
 		return 0;
 
+	/* If mark is mq num return it */
+	if (dfc_mode == DFC_MODE_MQ_NUM)
+		return mark;
+
 	switch (skb->protocol) {
 	/* TCPv4 ACKs */
 	case htons(ETH_P_IP):
@@ -715,7 +753,7 @@ int qmi_rmnet_get_queue(struct net_device *dev, struct sk_buff *skb)
 	if (unlikely(!itm))
 		goto done;
 
-	txq = itm->tcm_handle;
+	txq = itm->mq_idx;
 
 done:
 	spin_unlock_bh(&qos->qos_lock);
@@ -733,7 +771,7 @@ void *qmi_rmnet_qos_init(struct net_device *real_dev, u8 mux_id)
 {
 	struct qos_info *qos;
 
-	qos = kmalloc(sizeof(*qos), GFP_KERNEL);
+	qos = kzalloc(sizeof(*qos), GFP_KERNEL);
 	if (!qos)
 		return NULL;
 
@@ -960,7 +998,7 @@ void qmi_rmnet_work_init(void *port)
 	rmnet_ps_wq = alloc_workqueue("rmnet_powersave_work",
 					WQ_MEM_RECLAIM | WQ_CPU_INTENSIVE, 1);
 
-	rmnet_work = kmalloc(sizeof(*rmnet_work), GFP_ATOMIC);
+	rmnet_work = kzalloc(sizeof(*rmnet_work), GFP_ATOMIC);
 	if (!rmnet_work) {
 		destroy_workqueue(rmnet_ps_wq);
 		rmnet_ps_wq = NULL;
