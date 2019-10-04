@@ -52,7 +52,6 @@ LINUXINCLUDE    += \
                 -include $(srctree)/techpack/audio/config/sm8150autoconf.h
 endif
 
-obj-y += dsp/elliptic
 obj-y += soc/
 obj-y += dsp/
 obj-y += ipc/
