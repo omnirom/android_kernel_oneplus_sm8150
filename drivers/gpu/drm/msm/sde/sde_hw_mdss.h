@@ -523,6 +523,7 @@ struct sde_mdss_color {
 #define SDE_DBG_MASK_DS       (1 << 13)
 #define SDE_DBG_MASK_REGDMA   (1 << 14)
 #define SDE_DBG_MASK_QDSS     (1 << 15)
+#define SDE_DBG_MASK_SID      (1 << 15)
 
 /**
  * struct sde_hw_cp_cfg: hardware dspp/lm feature payload.
@@ -559,6 +560,7 @@ struct sde_hw_dim_layer {
 	struct sde_mdss_color color_fill;
 	struct sde_rect rect;
 };
+
 struct fingerprint_dim_layer {
 	uint32_t flags;
 	uint32_t stage;

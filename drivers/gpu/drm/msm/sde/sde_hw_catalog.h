@@ -112,26 +112,26 @@ enum {
 #define IS_UBWC_30_SUPPORTED(rev) \
 		IS_SDE_MAJOR_MINOR_SAME((rev), SDE_HW_UBWC_VER_30)
 
-/**
- * SDE INTERRUPTS - maintains the possible hw irq's allowed by HW
- * The order in this enum must match the order of the irqs defined
- * by 'sde_irq_map'
- */
-enum sde_intr_enum {
-	MDSS_INTR_SSPP_TOP0_INTR,
-	MDSS_INTR_SSPP_TOP0_INTR2,
-	MDSS_INTR_SSPP_TOP0_HIST_INTR,
-	MDSS_INTR_INTF_0_INTR,
-	MDSS_INTR_INTF_1_INTR,
-	MDSS_INTR_INTF_2_INTR,
-	MDSS_INTR_INTF_3_INTR,
-	MDSS_INTR_INTF_4_INTR,
-	MDSS_INTR_AD4_0_INTR,
-	MDSS_INTR_AD4_1_INTR,
-	MDSS_INTF_TEAR_1_INTR,
-	MDSS_INTF_TEAR_2_INTR,
-	MDSS_INTR_MAX
-};
+///**
+// * SDE INTERRUPTS - maintains the possible hw irq's allowed by HW
+// * The order in this enum must match the order of the irqs defined
+// * by 'sde_irq_map'
+// */
+//enum sde_intr_enum {
+//	MDSS_INTR_SSPP_TOP0_INTR,
+//	MDSS_INTR_SSPP_TOP0_INTR2,
+//	MDSS_INTR_SSPP_TOP0_HIST_INTR,
+//	MDSS_INTR_INTF_0_INTR,
+//	MDSS_INTR_INTF_1_INTR,
+//	MDSS_INTR_INTF_2_INTR,
+//	MDSS_INTR_INTF_3_INTR,
+//	MDSS_INTR_INTF_4_INTR,
+//	MDSS_INTR_AD4_0_INTR,
+//	MDSS_INTR_AD4_1_INTR,
+//	MDSS_INTF_TEAR_1_INTR,
+//	MDSS_INTF_TEAR_2_INTR,
+//	MDSS_INTR_MAX
+//};
 
 /**
  * MDP TOP BLOCK features
@@ -973,7 +973,8 @@ enum sde_vbif_client_type {
  * @xin_halt_timeout   maximum time (in usec) for xin to halt
  * @dynamic_ot_rd_tbl  dynamic OT read configuration table
  * @dynamic_ot_wr_tbl  dynamic OT write configuration table
- * @qos_tbl            Array of QoS priority table
+ * @qos_rt_tbl         real-time QoS priority table
+ * @qos_nrt_tbl        non-real-time QoS priority table
  * @memtype_count      number of defined memtypes
  * @memtype            array of xin memtype definitions
  */
@@ -984,7 +985,8 @@ struct sde_vbif_cfg {
 	u32 xin_halt_timeout;
 	struct sde_vbif_dynamic_ot_tbl dynamic_ot_rd_tbl;
 	struct sde_vbif_dynamic_ot_tbl dynamic_ot_wr_tbl;
-	struct sde_vbif_qos_tbl qos_tbl[VBIF_MAX_CLIENT];
+	struct sde_vbif_qos_tbl qos_rt_tbl;
+	struct sde_vbif_qos_tbl qos_nrt_tbl;
 	u32 memtype_count;
 	u32 memtype[MAX_XIN_COUNT];
 };
@@ -1261,7 +1263,6 @@ struct sde_mdss_cfg {
 	struct sde_format_extended *wb_formats;
 	struct sde_format_extended *virt_vig_formats;
 
-	DECLARE_BITMAP(mdss_irqs, MDSS_INTR_MAX);
 };
 
 struct sde_mdss_hw_cfg_handler {

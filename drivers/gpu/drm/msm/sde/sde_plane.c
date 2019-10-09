@@ -1169,12 +1169,15 @@ static void _sde_plane_setup_scaler3(struct sde_plane *psde,
 			scale_cfg->src_width[i] /= chroma_subsmpl_h;
 			scale_cfg->src_height[i] /= chroma_subsmpl_v;
 		}
+
 		scale_cfg->preload_x[i] = SDE_QSEED3_DEFAULT_PRELOAD_H;
 		scale_cfg->preload_y[i] = SDE_QSEED3_DEFAULT_PRELOAD_V;
+
 		pstate->pixel_ext.num_ext_pxls_top[i] =
 			scale_cfg->src_height[i];
 		pstate->pixel_ext.num_ext_pxls_left[i] =
 			scale_cfg->src_width[i];
+
 	}
 
 	if ((!(SDE_FORMAT_IS_YUV(fmt)) && (src_h == dst_h)
@@ -2926,6 +2929,7 @@ void sde_plane_clear_multirect(const struct drm_plane_state *drm_state)
 	pstate->multirect_index = SDE_SSPP_RECT_SOLO;
 	pstate->multirect_mode = SDE_SSPP_MULTIRECT_NONE;
 }
+
 //xiaoxiaohuan@OnePlus.MultiMediaService,2018/08/04, add for fingerprint
 int sde_plane_check_fingerprint_layer(const struct drm_plane_state *drm_state)
 {
@@ -4384,9 +4388,11 @@ static void _sde_plane_install_properties(struct drm_plane *plane,
 
 	msm_property_install_range(&psde->property_info, "zpos",
 		0x0, 0, zpos_max, zpos_def, PLANE_PROP_ZPOS);
+
 	//xiaoxiaohuan@OnePlus.MultiMediaService,2018/08/04, add for fingerprint
 	msm_property_install_range(&psde->property_info, "PLANE_CUST",
 			0x0, 0, INT_MAX, 0, PLANE_PROP_CUSTOM);
+
 	msm_property_install_range(&psde->property_info, "alpha",
 		0x0, 0, 255, 255, PLANE_PROP_ALPHA);
 

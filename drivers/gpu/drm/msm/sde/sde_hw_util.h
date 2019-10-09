@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -181,6 +181,8 @@ int sde_reg_read(struct sde_hw_blk_reg_map *c, u32 reg_off);
 #define INTF_MISR_CTRL_FREE_RUN_MASK	BIT(31)
 
 void *sde_hw_util_get_dir(void);
+
+//void sde_init_scaler_blk(struct sde_scaler_blk *blk, u32 version);
 
 void sde_set_scaler_v2(struct sde_hw_scaler3_cfg *cfg,
 		const struct sde_drm_scaler_v2 *scale_v2);

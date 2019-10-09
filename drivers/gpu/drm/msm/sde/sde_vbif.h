@@ -58,15 +58,13 @@ struct sde_vbif_set_xin_halt_params {
  * @clk_ctrl: clock control identifier of the xin
  * @num: pipe identifier (debug only)
  * @is_rt: true if pipe is used in real-time use case
- * @client_type: client type enumerated by sde_vbif_client_type
  */
 struct sde_vbif_set_qos_params {
-       u32 vbif_idx;
-       u32 xin_id;
-       u32 clk_ctrl;
-       u32 num;
-       bool is_rt;
-       enum sde_vbif_client_type client_type;
+	u32 vbif_idx;
+	u32 xin_id;
+	u32 clk_ctrl;
+	u32 num;
+	bool is_rt;
 };
 
 /**

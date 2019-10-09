@@ -257,6 +257,7 @@ struct sde_kms {
 	struct sde_splash_data splash_data;
 	struct sde_hw_vbif *hw_vbif[VBIF_MAX];
 	struct sde_hw_mdp *hw_mdp;
+	//struct sde_hw_sid *hw_sid;
 	int dsi_display_count;
 	void **dsi_displays;
 	int wb_display_count;

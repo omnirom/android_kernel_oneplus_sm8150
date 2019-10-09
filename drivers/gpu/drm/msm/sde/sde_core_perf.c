@@ -628,6 +628,14 @@ void sde_core_perf_crtc_update(struct drm_crtc *crtc,
 			_sde_core_perf_crtc_update_bus(kms, crtc, i);
 	}
 
+//	if (kms->perf.bw_vote_mode == DISP_RSC_MODE &&
+//	    ((get_sde_rsc_current_state(SDE_RSC_INDEX) != SDE_RSC_CLK_STATE
+//	      && params_changed) ||
+//	    (get_sde_rsc_current_state(SDE_RSC_INDEX) == SDE_RSC_CLK_STATE
+//	      && update_bus)))
+//		sde_rsc_client_trigger_vote(sde_cstate->rsc_client,
+//				update_bus ? true : false);
+
 	/*
 	 * Update the clock after bandwidth vote to ensure
 	 * bandwidth is available before clock rate is increased.

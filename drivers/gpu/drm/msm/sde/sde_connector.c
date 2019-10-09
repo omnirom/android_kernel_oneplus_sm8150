@@ -23,7 +23,9 @@
 #include "dsi_display.h"
 #include "sde_crtc.h"
 #include "sde_rm.h"
+
 #include "sde_trace.h"
+
 #define BL_NODE_NAME_SIZE 32
 
 /* Autorefresh will occur after FRAME_CNT frames. Large values are unlikely */
@@ -146,7 +148,7 @@ static int sde_backlight_setup(struct sde_connector *c_conn,
 	display = (struct dsi_display *) c_conn->display;
 	bl_config = &display->panel->bl_config;
 	props.max_brightness = bl_config->brightness_max_level;
-//	props.brightness = bl_config->brightness_default_level;
+	//props.brightness = bl_config->brightness_default_level;
 	props.brightness = bl_config->bl_def_val;
 	SDE_ERROR("props.brightness = %d\n",props.brightness);
 	snprintf(bl_node_name, BL_NODE_NAME_SIZE, "panel%u-backlight",
@@ -428,6 +430,7 @@ void sde_connector_schedule_status_work(struct drm_connector *connector,
 	struct sde_connector *c_conn;
 	struct msm_display_info info;
 	struct dsi_display *dsi_display;
+
 	c_conn = to_sde_connector(connector);
 	if (!c_conn)
 		return;
@@ -569,6 +572,7 @@ static int _sde_connector_update_bl_scale(struct sde_connector *c_conn)
 
 	return rc;
 }
+
 //xiaoxiaohuan@OnePlus.MultiMediaService,2018/08/04, add for fingerprint
 extern bool sde_crtc_get_fingerprint_mode(struct drm_crtc_state *crtc_state);
 extern bool sde_crtc_get_fingerprint_pressed(struct drm_crtc_state *crtc_state);
@@ -1421,8 +1425,8 @@ static int sde_connector_atomic_set_property(struct drm_connector *connector,
 		c_conn->bl_scale_dirty = true;
 		break;
 	case CONNECTOR_PROP_AD_BL_SCALE:
-		// c_conn->bl_scale_ad = val;
-		// c_conn->bl_scale_dirty = true;
+		//c_conn->bl_scale_ad = val;
+		//c_conn->bl_scale_dirty = true;
 		break;
 	default:
 		break;
@@ -2117,8 +2121,7 @@ static void sde_connector_check_status_work(struct work_struct *work)
 		return;
 	}
 
-	sde_esk_check_delayed_work = &conn->status_work;
-
+        sde_esk_check_delayed_work = &conn->status_work;
 	mutex_lock(&conn->lock);
 	if (!conn->ops.check_status ||
 			(conn->dpms_mode != DRM_MODE_DPMS_ON)) {
@@ -2189,6 +2192,7 @@ static int sde_connector_populate_mode_info(struct drm_connector *conn,
 		int topology_idx = 0;
 
 		memset(&mode_info, 0, sizeof(mode_info));
+
 		SDE_EVT32(conn, ((unsigned long long)conn) >> 32, 0x9999);
 		rc = c_conn->ops.get_mode_info(&c_conn->base, mode, &mode_info,
 			sde_kms->catalog->max_mixer_width,
@@ -2534,6 +2538,7 @@ struct drm_connector *sde_connector_init(struct drm_device *dev,
 	msm_property_install_range(&c_conn->property_info, "ad_bl_scale",
 		0x0, 0, MAX_AD_BL_SCALE_LEVEL, MAX_AD_BL_SCALE_LEVEL,
 		CONNECTOR_PROP_AD_BL_SCALE);
+
 	//xiaoxiaohuan@OnePlus.MultiMediaService,2018/08/04, add for fingerprint
 	msm_property_install_range(&c_conn->property_info,"CONNECTOR_CUST",
 			0x0, 0, INT_MAX, 0, CONNECTOR_PROP_CUSTOM);

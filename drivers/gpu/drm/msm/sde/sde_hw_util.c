@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -89,6 +89,19 @@ u32 *sde_hw_util_get_log_mask_ptr(void)
 	return &sde_hw_util_log_mask;
 }
 
+//void sde_init_scaler_blk(struct sde_scaler_blk *blk, u32 version)
+//{
+//	if (!blk)
+//		return;
+//
+//	blk->version = version;
+//	blk->v_preload = QSEED4_DEFAULT_PRELOAD_V;
+//	blk->h_preload = QSEED4_DEFAULT_PRELOAD_H;
+//	if (version < QSEED4_SCALER_VERSION) {
+//		blk->v_preload = QSEED3_DEFAULT_PRELOAD_V;
+//		blk->h_preload = QSEED3_DEFAULT_PRELOAD_H;
+//	}
+//}
 void sde_set_scaler_v2(struct sde_hw_scaler3_cfg *cfg,
 		const struct sde_drm_scaler_v2 *scale_v2)
 {
@@ -324,13 +337,13 @@ static inline scaler_lut_type get_scaler_lut(
 		return NULL;
 
 	switch (scaler_version) {
-
 	case QSEED3LITE_SCALER_VERSION:
 		lut_ptr = _sde_hw_setup_scaler3lite_lut;
 		break;
 	default:
 		lut_ptr = _sde_hw_setup_scaler3_lut;
 	}
+
 	return lut_ptr;
 }
 
