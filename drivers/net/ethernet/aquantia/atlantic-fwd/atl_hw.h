@@ -63,6 +63,9 @@ struct atl_hw {
 	uint8_t rss_key[ATL_RSS_KEY_SIZE];
 #define ATL_RSS_TBL_SIZE (1 << 6)
 	uint8_t rss_tbl[ATL_RSS_TBL_SIZE];
+	struct atl_thermal thermal;
+#define ATL_FW_CFG_DUMP_SIZE 2
+	uint32_t fw_cfg_dump[ATL_FW_CFG_DUMP_SIZE];
 };
 
 union atl_desc;
@@ -114,6 +117,14 @@ static inline void atl_write(struct atl_hw *hw, uint32_t addr, uint32_t val)
 		return;
 
 	writel(val, base + addr);
+}
+
+
+static inline void atl_write_mask_bits(struct atl_hw *hw, uint32_t addr,
+			     uint32_t mask, uint32_t val)
+{
+	atl_write(hw, addr,
+		  (atl_read(hw, addr) & ~mask) | (val & mask));
 }
 
 static inline void atl_write_bits(struct atl_hw *hw, uint32_t addr,

@@ -499,11 +499,9 @@ static int mhi_pm_mission_mode_transition(struct mhi_controller *mhi_cntrl)
 
 	/* add supported devices */
 	mhi_create_devices(mhi_cntrl);
-	/* setup sysfs nodes for userspace votes */
-	mhi_create_vote_sysfs(mhi_cntrl);
 
 	/* setup sysfs nodes for userspace votes */
-	mhi_create_vote_sysfs(mhi_cntrl);
+	mhi_create_sysfs(mhi_cntrl);
 
 	read_lock_bh(&mhi_cntrl->pm_lock);
 
@@ -613,7 +611,7 @@ static void mhi_pm_disable_transition(struct mhi_controller *mhi_cntrl,
 	MHI_LOG("Finish resetting channels\n");
 
 	/* remove support for userspace votes */
-	mhi_destroy_vote_sysfs(mhi_cntrl);
+	mhi_destroy_sysfs(mhi_cntrl);
 
 	MHI_LOG("Waiting for all pending threads to complete\n");
 	wake_up_all(&mhi_cntrl->state_event);
@@ -953,6 +951,9 @@ void mhi_control_error(struct mhi_controller *mhi_cntrl)
 			to_mhi_pm_state_str(cur_state));
 		goto exit_control_error;
 	}
+
+	/* notify waiters to bail out early since MHI has entered ERROR state */
+	wake_up_all(&mhi_cntrl->state_event);
 
 	/* start notifying all clients who request early notification */
 	device_for_each_child(mhi_cntrl->dev, NULL, mhi_early_notify_device);
@@ -1378,6 +1379,7 @@ int mhi_pm_fast_resume(struct mhi_controller *mhi_cntrl, bool notify_client)
 
 	return 0;
 }
+EXPORT_SYMBOL(mhi_pm_resume);
 
 int __mhi_device_get_sync(struct mhi_controller *mhi_cntrl)
 {
@@ -1385,11 +1387,8 @@ int __mhi_device_get_sync(struct mhi_controller *mhi_cntrl)
 
 	read_lock_bh(&mhi_cntrl->pm_lock);
 	mhi_cntrl->wake_get(mhi_cntrl, true);
-	if (MHI_PM_IN_SUSPEND_STATE(mhi_cntrl->pm_state)) {
-		pm_wakeup_event(&mhi_cntrl->mhi_dev->dev, 0);
-		mhi_cntrl->runtime_get(mhi_cntrl, mhi_cntrl->priv_data);
-		mhi_cntrl->runtime_put(mhi_cntrl, mhi_cntrl->priv_data);
-	}
+	if (MHI_PM_IN_SUSPEND_STATE(mhi_cntrl->pm_state))
+		mhi_trigger_resume(mhi_cntrl);
 	read_unlock_bh(&mhi_cntrl->pm_lock);
 
 	ret = wait_event_timeout(mhi_cntrl->state_event,
@@ -1466,10 +1465,9 @@ void mhi_device_put(struct mhi_device *mhi_dev, int vote)
 	if (vote & MHI_VOTE_DEVICE) {
 		atomic_dec(&mhi_dev->dev_vote);
 		read_lock_bh(&mhi_cntrl->pm_lock);
-		if (MHI_PM_IN_SUSPEND_STATE(mhi_cntrl->pm_state)) {
-			mhi_cntrl->runtime_get(mhi_cntrl, mhi_cntrl->priv_data);
-			mhi_cntrl->runtime_put(mhi_cntrl, mhi_cntrl->priv_data);
-		}
+		if (MHI_PM_IN_SUSPEND_STATE(mhi_cntrl->pm_state))
+			mhi_trigger_resume(mhi_cntrl);
+
 		mhi_cntrl->wake_put(mhi_cntrl, false);
 		read_unlock_bh(&mhi_cntrl->pm_lock);
 	}
