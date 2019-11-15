@@ -5929,11 +5929,10 @@ static int sde_crtc_onscreenfinger_atomic_check(struct sde_crtc_state *cstate,
 	}
 
         if (fp_mode == 1) {
-                display->panel->dim_status = true;
+                sde_crtc_config_fingerprint_dim_layer(&cstate->base, cnt > 3 ? cnt - 12 : 1);
                 cstate->fingerprint_pressed = true;
                 return 0;
         } else if (fp_mode == 0) {
-                display->panel->dim_status = false;
                 cstate->fingerprint_pressed = false;
                 return 0;
         }
