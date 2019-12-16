@@ -496,7 +496,7 @@ static u32 sde_rsc_timer_calculate(struct sde_rsc_priv *rsc,
 	return ret;
 }
 
-static int sde_rsc_switch_to_cmd(struct sde_rsc_priv *rsc,
+static int sde_rsc_switch_to_cmd_v3(struct sde_rsc_priv *rsc,
 	struct sde_rsc_cmd_config *config,
 	struct sde_rsc_client *caller_client,
 	int *wait_vblank_crtc_id)
@@ -589,7 +589,7 @@ static int sde_rsc_switch_to_cmd_v2(struct sde_rsc_priv *rsc,
 
 	/* update timers - might not be available at next switch */
 	if (config)
-		sde_rsc_timer_calculate(rsc, config);
+		sde_rsc_timer_calculate(rsc, config, SDE_RSC_CMD_STATE);
 
 	/**
 	 * rsc clients can still send config at any time. If a config is
@@ -833,7 +833,68 @@ end:
 	return rc;
 }
 
-static int sde_rsc_switch_to_idle(struct sde_rsc_priv *rsc,
+static int sde_rsc_switch_to_vid_v2(struct sde_rsc_priv *rsc,
+	struct sde_rsc_cmd_config *config,
+	struct sde_rsc_client *caller_client,
+	int *wait_vblank_crtc_id)
+{
+	int rc = 0;
+
+	/* update timers - might not be available at next switch */
+	if (config && (caller_client == rsc->primary_client))
+		sde_rsc_timer_calculate(rsc, config, SDE_RSC_VID_STATE);
+
+	/* early exit without vsync wait for vid state */
+	if (rsc->current_state == SDE_RSC_VID_STATE)
+		goto end;
+
+	/* video state switch should be done immediately */
+	if (rsc->hw_ops.state_update) {
+		rc = rsc->hw_ops.state_update(rsc, SDE_RSC_VID_STATE);
+		if (!rc)
+			rpmh_mode_solver_set(rsc->disp_rsc, false);
+	}
+
+	/* indicate wait for vsync for cmd to vid state switch */
+	if (!rc && rsc->primary_client &&
+			(rsc->current_state == SDE_RSC_CMD_STATE)) {
+		/* clear VSYNC timestamp for indication when update completes */
+		if (rsc->hw_ops.hw_vsync)
+			rsc->hw_ops.hw_vsync(rsc, VSYNC_ENABLE, NULL, 0, 0);
+		if (!wait_vblank_crtc_id) {
+			pr_err("invalid crtc id wait pointer provided\n");
+			msleep(PRIMARY_VBLANK_WORST_CASE_MS);
+		} else {
+			*wait_vblank_crtc_id = rsc->primary_client->crtc_id;
+
+			/* increase refcount, so we wait for the next vsync */
+			atomic_inc(&rsc->rsc_vsync_wait);
+			SDE_EVT32(atomic_read(&rsc->rsc_vsync_wait));
+		}
+	} else if (atomic_read(&rsc->rsc_vsync_wait)) {
+		SDE_EVT32(rsc->primary_client, rsc->current_state,
+			atomic_read(&rsc->rsc_vsync_wait));
+
+		/* Wait for the vsync, if the refcount is set */
+		rc = wait_event_timeout(rsc->rsc_vsync_waitq,
+			atomic_read(&rsc->rsc_vsync_wait) == 0,
+			msecs_to_jiffies(PRIMARY_VBLANK_WORST_CASE_MS*2));
+		if (!rc) {
+			pr_err("Timeout waiting for vsync\n");
+			rc = -ETIMEDOUT;
+			SDE_EVT32(atomic_read(&rsc->rsc_vsync_wait), rc,
+				SDE_EVTLOG_ERROR);
+		} else {
+			SDE_EVT32(atomic_read(&rsc->rsc_vsync_wait), rc);
+			rc = 0;
+		}
+	}
+
+end:
+	return rc;
+}
+
+static int sde_rsc_switch_to_idle_v3(struct sde_rsc_priv *rsc,
 	struct sde_rsc_cmd_config *config,
 	struct sde_rsc_client *caller_client,
 	int *wait_vblank_crtc_id)
@@ -853,7 +914,7 @@ static int sde_rsc_switch_to_idle(struct sde_rsc_priv *rsc,
 		    client->client_type == SDE_RSC_EXTERNAL_DISP_CLIENT)
 			multi_display_active = true;
 		else if (client->current_state == SDE_RSC_CLK_STATE &&
-				client->client_type == SDE_RSC_CLK_CLIENT)
+			client->client_type == SDE_RSC_CLK_CLIENT)
 			clk_client_active = true;
 		else if (client->current_state == SDE_RSC_VID_STATE)
 			vid_display_active = true;
@@ -866,18 +927,20 @@ static int sde_rsc_switch_to_idle(struct sde_rsc_priv *rsc,
 	pr_debug("multi_display:%d clk_client:%d vid_display:%d cmd_display:%d\n",
 		multi_display_active, clk_client_active, vid_display_active,
 		cmd_display_active);
-	if (vid_display_active && !multi_display_active) {
-		rc = sde_rsc_switch_to_vid(rsc, NULL, rsc->primary_client,
-				wait_vblank_crtc_id);
+	if (vid_display_active && !multi_display_active &&
+			rsc->state_ops.switch_to_vid) {
+		rc = rsc->state_ops.switch_to_vid(rsc, NULL,
+			rsc->primary_client, wait_vblank_crtc_id);
 		if (!rc)
 			rc = VID_MODE_SWITCH_SUCCESS;
-	} else if (cmd_display_active && !multi_display_active) {
-		rc = sde_rsc_switch_to_cmd(rsc, NULL, rsc->primary_client,
-				wait_vblank_crtc_id);
+	} else if (cmd_display_active && !multi_display_active &&
+			rsc->state_ops.switch_to_cmd) {
+		rc = rsc->state_ops.switch_to_cmd(rsc, NULL,
+			rsc->primary_client, wait_vblank_crtc_id);
 		if (!rc)
 			rc = CMD_MODE_SWITCH_SUCCESS;
-	} else if (clk_client_active) {
-		rc = sde_rsc_switch_to_clk(rsc, wait_vblank_crtc_id);
+	} else if (clk_client_active && rsc->state_ops.switch_to_clk) {
+		rc = rsc->state_ops.switch_to_clk(rsc, wait_vblank_crtc_id);
 		if (!rc)
 			rc = CLK_MODE_SWITCH_SUCCESS;
 	} else if (rsc->hw_ops.state_update) {
@@ -1134,18 +1197,20 @@ int sde_rsc_client_state_update(struct sde_rsc_client *caller_client,
 
 	switch (state) {
 	case SDE_RSC_IDLE_STATE:
-		rc = sde_rsc_switch_to_idle(rsc, NULL, rsc->primary_client,
-			wait_vblank_crtc_id);
+		if (rsc->state_ops.switch_to_idle) {
+			rc = rsc->state_ops.switch_to_idle(rsc, NULL,
+				rsc->primary_client, wait_vblank_crtc_id);
 
-		if (rc == CMD_MODE_SWITCH_SUCCESS) {
-			state = SDE_RSC_CMD_STATE;
-			rc = 0;
-		} else if (rc == VID_MODE_SWITCH_SUCCESS) {
-			state = SDE_RSC_VID_STATE;
-			rc = 0;
-		} else if (rc == CLK_MODE_SWITCH_SUCCESS) {
-			state = SDE_RSC_CLK_STATE;
-			rc = 0;
+			if (rc == CMD_MODE_SWITCH_SUCCESS) {
+				state = SDE_RSC_CMD_STATE;
+				rc = 0;
+			} else if (rc == VID_MODE_SWITCH_SUCCESS) {
+				state = SDE_RSC_VID_STATE;
+				rc = 0;
+			} else if (rc == CLK_MODE_SWITCH_SUCCESS) {
+				state = SDE_RSC_CLK_STATE;
+				rc = 0;
+			}
 		}
 		break;
 
@@ -1731,6 +1796,10 @@ static int sde_rsc_probe(struct platform_device *pdev)
 					+ RSC_MODE_INSTRUCTION_TIME;
 		rsc->backoff_time_ns = RSC_MODE_INSTRUCTION_TIME;
 		rsc->mode_threshold_time_ns = rsc->time_slot_0_ns;
+		rsc->state_ops.switch_to_idle = sde_rsc_switch_to_idle_v3;
+		rsc->state_ops.switch_to_clk = sde_rsc_switch_to_clk_v3;
+		rsc->state_ops.switch_to_cmd = sde_rsc_switch_to_cmd_v3;
+		rsc->state_ops.switch_to_vid = sde_rsc_switch_to_vid_v3;
 	} else {
 		rsc->time_slot_0_ns = (rsc->single_tcs_execution_time * 2)
 					+ RSC_MODE_INSTRUCTION_TIME;
@@ -1738,6 +1807,10 @@ static int sde_rsc_probe(struct platform_device *pdev)
 						+ RSC_MODE_INSTRUCTION_TIME;
 		rsc->mode_threshold_time_ns = rsc->backoff_time_ns
 						+ RSC_MODE_THRESHOLD_OVERHEAD;
+		rsc->state_ops.switch_to_idle = sde_rsc_switch_to_idle_v2;
+		rsc->state_ops.switch_to_clk = sde_rsc_switch_to_clk_v2;
+		rsc->state_ops.switch_to_cmd = sde_rsc_switch_to_cmd_v2;
+		rsc->state_ops.switch_to_vid = sde_rsc_switch_to_vid_v2;
 	}
 
 	ret = sde_power_resource_init(pdev, &rsc->phandle);
