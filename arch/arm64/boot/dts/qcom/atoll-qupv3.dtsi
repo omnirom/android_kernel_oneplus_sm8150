@@ -18,9 +18,17 @@
 	qupv3_0: qcom,qupv3_0_geni_se@0x8c0000 {
 		compatible = "qcom,qupv3-geni-se";
 		reg = <0x8c0000 0x2000>;
+<<<<<<< HEAD
 		qcom,bus-mas-id = <MSM_BUS_MASTER_QUP_0>;
 		qcom,bus-slv-id = <MSM_BUS_SLAVE_EBI_CH0>;
 		qcom,iommu-s1-bypass;
+=======
+		qcom,msm-bus,num-paths = <2>;
+		qcom,msm-bus,vectors-bus-ids =
+			<MSM_BUS_MASTER_QUP_CORE_0 MSM_BUS_SLAVE_QUP_CORE_0>,
+			<MSM_BUS_MASTER_QUP_0 MSM_BUS_SLAVE_EBI_CH0>;
+		qcom,iommu-atomic-ctx;
+>>>>>>> LA.UM.8.1.r1-12600-sm8150.0
 
 		iommu_qupv3_0_geni_se_cb: qcom,iommu_qupv3_0_geni_se_cb {
 			compatible = "qcom,qupv3-geni-se-cb";
@@ -32,9 +40,17 @@
 	qupv3_1: qcom,qupv3_1_geni_se@0xac0000 {
 		compatible = "qcom,qupv3-geni-se";
 		reg = <0xac0000 0x2000>;
+<<<<<<< HEAD
 		qcom,bus-mas-id = <MSM_BUS_MASTER_QUP_1>;
 		qcom,bus-slv-id = <MSM_BUS_SLAVE_EBI_CH0>;
 		qcom,iommu-s1-bypass;
+=======
+		qcom,msm-bus,num-paths = <2>;
+		qcom,msm-bus,vectors-bus-ids =
+			<MSM_BUS_MASTER_QUP_CORE_1 MSM_BUS_SLAVE_QUP_CORE_1>,
+			<MSM_BUS_MASTER_QUP_1 MSM_BUS_SLAVE_EBI_CH0>;
+		qcom,iommu-atomic-ctx;
+>>>>>>> LA.UM.8.1.r1-12600-sm8150.0
 
 		iommu_qupv3_1_geni_se_cb: qcom,iommu_qupv3_1_geni_se_cb {
 			compatible = "qcom,qupv3-geni-se-cb";

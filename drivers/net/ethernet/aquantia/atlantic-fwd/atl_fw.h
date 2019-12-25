@@ -58,6 +58,8 @@ enum atl_fw2_opts {
 	atl_define_bit(atl_fw2_link_drop, 22)
 	atl_define_bit(atl_fw2_nic_proxy, 0x17)
 	atl_define_bit(atl_fw2_wol, 0x18)
+	atl_define_bit(atl_fw2_thermal_alarm, 29)
+	atl_define_bit(atl_fw2_statistics, 30)
 };
 
 enum atl_fw2_ex_caps {
@@ -138,6 +140,7 @@ struct atl_fw_ops {
 	int (*dump_cfg)(struct atl_hw *hw);
 	int (*restore_cfg)(struct atl_hw *hw);
 	int (*set_phy_loopback)(struct atl_nic *nic, u32 mode);
+	int (*set_mediadetect)(struct atl_hw *hw, bool on);
 	unsigned efuse_shadow_addr_reg;
 };
 

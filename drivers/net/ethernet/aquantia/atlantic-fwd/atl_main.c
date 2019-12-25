@@ -13,6 +13,7 @@
 #include <linux/etherdevice.h>
 #include <linux/rtnetlink.h>
 #include <linux/pm_runtime.h>
+#include "atl_fwdnl.h"
 
 #include "atl_qcom_ipa.h"
 
@@ -20,7 +21,7 @@
 
 const char atl_driver_name[] = "atlantic-fwd";
 
-int atl_max_queues = ATL_MAX_QUEUES;
+unsigned int atl_max_queues = ATL_MAX_QUEUES;
 module_param_named(max_queues, atl_max_queues, uint, 0444);
 
 static unsigned int atl_rx_mod = 15, atl_tx_mod = 15;
@@ -37,8 +38,13 @@ static void atl_start_link(struct atl_nic *nic)
 {
 	struct atl_hw *hw = &nic->hw;
 
-	if (hw->mcp.poll_link)
-		mod_timer(&nic->link_timer, jiffies + HZ);
+	atl_set_media_detect(nic, !!(nic->priv_flags & ATL_PF_BIT(MEDIA_DETECT)));
+
+	hw->link_state.force_off = 0;
+	hw->mcp.ops->set_link(hw, true);
+	set_bit(ATL_ST_UPDATE_LINK, &hw->state);
+	atl_schedule_work(nic);
+}
 
 static void atl_stop_link(struct atl_nic *nic)
 {
@@ -105,6 +111,10 @@ static int atl_open(struct net_device *ndev)
 	set_bit(ATL_ST_UP, &nic->hw.state);
 
 	pm_runtime_put_sync(&nic->hw.pdev->dev);
+
+#ifdef CONFIG_ATLFWD_FWD_NETLINK
+	atlfwd_nl_on_open(nic->ndev);
+#endif
 
 	return 0;
 
@@ -177,6 +187,9 @@ static const struct net_device_ops atl_ndev_ops = {
 	.ndo_open = atl_open,
 	.ndo_stop = atl_ndo_close,
 	.ndo_start_xmit = atl_start_xmit,
+#ifdef CONFIG_ATLFWD_FWD_NETLINK
+	.ndo_select_queue = atlfwd_nl_select_queue,
+#endif
 	.ndo_vlan_rx_add_vid = atl_vlan_rx_add_vid,
 	.ndo_vlan_rx_kill_vid = atl_vlan_rx_kill_vid,
 	.ndo_set_rx_mode = atl_set_rx_mode,
@@ -351,10 +364,8 @@ static const struct pci_device_id atl_pci_tbl[] = {
 	{ PCI_VDEVICE(AQUANTIA, 0x80b1), ATL_AQC107},
 	{ PCI_VDEVICE(AQUANTIA, 0x11b1), ATL_AQC108},
 	{ PCI_VDEVICE(AQUANTIA, 0x91b1), ATL_AQC108},
-	{ PCI_VDEVICE(AQUANTIA, 0x51b1), ATL_AQC108},
 	{ PCI_VDEVICE(AQUANTIA, 0x12b1), ATL_AQC109},
 	{ PCI_VDEVICE(AQUANTIA, 0x92b1), ATL_AQC109},
-	{ PCI_VDEVICE(AQUANTIA, 0x52b1), ATL_AQC109},
 	{}
 };
 
@@ -377,6 +388,15 @@ static void atl_setup_rss(struct atl_nic *nic)
 
 static int atl_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
+	/* Number of queues:
+	 * Extra TX queue is used for redirection to FWD ring.
+	 */
+#ifdef CONFIG_ATLFWD_FWD_NETLINK
+	const unsigned int txqs = atl_max_queues + 1;
+#else
+	const unsigned int txqs = atl_max_queues;
+#endif
+	const unsigned int rxqs = atl_max_queues;
 	int ret, pci_64 = 0;
 	struct net_device *ndev;
 	struct atl_nic *nic = NULL;
@@ -406,7 +426,7 @@ static int atl_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto err_pci_reg;
 	}
 
-	ndev = alloc_etherdev_mq(sizeof(struct atl_nic), atl_max_queues);
+	ndev = alloc_etherdev_mqs(sizeof(struct atl_nic), txqs, rxqs);
 	if (!ndev) {
 		ret = -ENOMEM;
 		goto err_alloc_ndev;
@@ -512,6 +532,10 @@ static int atl_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	atl_intr_enable_non_ring(nic);
 	mod_timer(&nic->work_timer, jiffies + HZ);
 
+#ifdef CONFIG_ATLFWD_FWD_NETLINK
+	atlfwd_nl_on_probe(nic->ndev);
+#endif
+
 	return 0;
 
 err_hwmon_init:
@@ -541,6 +565,10 @@ static void atl_remove(struct pci_dev *pdev)
 
 	if (!nic)
 		return;
+
+#ifdef CONFIG_ATLFWD_FWD_NETLINK
+	atlfwd_nl_on_remove(nic->ndev);
+#endif
 
 	atl_stop(nic, true);
 	disable_needed = test_and_clear_bit(ATL_ST_ENABLED, &nic->hw.state);
@@ -771,8 +799,18 @@ static int __init atl_module_init(void)
 	if (ret)
 		goto err_pci_reg;
 
+#ifdef CONFIG_ATLFWD_FWD_NETLINK
+	ret = atlfwd_nl_init();
+	if (ret)
+		goto err_fwd_netlink;
+#endif
+
 	return 0;
 
+#ifdef CONFIG_ATLFWD_FWD_NETLINK
+err_fwd_netlink:
+#endif
+	pci_unregister_driver(&atl_pci_ops);
 err_pci_reg:
 	atl_qcom_unregister(&atl_pci_ops);
 err_qcom_reg:
@@ -783,6 +821,10 @@ module_init(atl_module_init);
 
 static void __exit atl_module_exit(void)
 {
+#ifdef CONFIG_ATLFWD_FWD_NETLINK
+	atlfwd_nl_exit();
+#endif
+
 	pci_unregister_driver(&atl_pci_ops);
 
 	atl_qcom_ipa_unregister(&atl_pci_ops);
