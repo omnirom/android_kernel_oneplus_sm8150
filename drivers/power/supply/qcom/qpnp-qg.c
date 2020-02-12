@@ -278,6 +278,115 @@ static int qg_store_soc_params(struct qpnp_qg *chip)
 	return rc;
 }
 
+#define MAX_FIFO_CNT_FOR_ESR			50
+static int qg_config_s2_state(struct qpnp_qg *chip,
+		enum s2_state requested_state, bool state_enable,
+		bool process_fifo)
+{
+	int rc, acc_interval, acc_length;
+	u8 fifo_length, reg = 0, state = S2_DEFAULT;
+
+	if ((chip->s2_state_mask & requested_state) && (state_enable == true))
+		return 0; /* No change in state */
+
+	if (!(chip->s2_state_mask & requested_state) && (state_enable == false))
+		return 0; /* No change in state */
+
+	if (state_enable)
+		chip->s2_state_mask |= requested_state;
+	else
+		chip->s2_state_mask &= ~requested_state;
+
+	/* define the priority of the states */
+	if (chip->s2_state_mask & S2_FAST_CHARGING)
+		state = S2_FAST_CHARGING;
+	else if (chip->s2_state_mask & S2_LOW_VBAT)
+		state = S2_LOW_VBAT;
+	else if (chip->s2_state_mask & S2_SLEEP)
+		state = S2_SLEEP;
+	else
+		state = S2_DEFAULT;
+
+	if (state == chip->s2_state)
+		return 0;
+
+	switch (state) {
+	case S2_FAST_CHARGING:
+		fifo_length = chip->dt.fast_chg_s2_fifo_length;
+		acc_interval = chip->dt.s2_acc_intvl_ms;
+		acc_length = chip->dt.s2_acc_length;
+		break;
+	case S2_LOW_VBAT:
+		fifo_length = chip->dt.s2_vbat_low_fifo_length;
+		acc_interval = chip->dt.s2_acc_intvl_ms;
+		acc_length = chip->dt.s2_acc_length;
+		break;
+	case S2_SLEEP:
+		fifo_length = chip->dt.sleep_s2_fifo_length;
+		acc_interval = chip->dt.sleep_s2_acc_intvl_ms;
+		acc_length = chip->dt.sleep_s2_acc_length;
+		break;
+	case S2_DEFAULT:
+		fifo_length = chip->dt.s2_fifo_length;
+		acc_interval = chip->dt.s2_acc_intvl_ms;
+		acc_length = chip->dt.s2_acc_length;
+		break;
+	default:
+		pr_err("Invalid S2 state %d\n", state);
+		return -EINVAL;
+	}
+
+	if (fifo_length)
+		qg_esr_mod_count = MAX_FIFO_CNT_FOR_ESR / fifo_length;
+
+	rc = qg_master_hold(chip, true);
+	if (rc < 0) {
+		pr_err("Failed to hold master, rc=%d\n", rc);
+		return rc;
+	}
+
+	if (process_fifo) {
+		rc = qg_process_rt_fifo(chip);
+		if (rc < 0) {
+			pr_err("Failed to process FIFO real-time, rc=%d\n", rc);
+			goto done;
+		}
+	}
+
+	rc = qg_update_fifo_length(chip, fifo_length);
+	if (rc < 0) {
+		pr_err("Failed to update S2 fifo-length, rc=%d\n", rc);
+		goto done;
+	}
+
+	reg = acc_interval / 10;
+	rc = qg_write(chip, chip->qg_base + QG_S2_NORMAL_MEAS_CTL3_REG,
+					&reg, 1);
+	if (rc < 0) {
+		pr_err("Failed to update S2 acc intrvl, rc=%d\n", rc);
+		goto done;
+	}
+
+	reg = ilog2(acc_length) - 1;
+	rc = qg_masked_write(chip, chip->qg_base + QG_S2_NORMAL_MEAS_CTL2_REG,
+					NUM_OF_ACCUM_MASK, reg);
+	if (rc < 0) {
+		pr_err("Failed to update S2 ACC length, rc=%d\n", rc);
+		goto done;
+	}
+
+	chip->s2_state = state;
+
+	qg_dbg(chip, QG_DEBUG_STATUS, "S2 New state=%x  fifo_length=%d interval=%d acc_length=%d\n",
+				state, fifo_length, acc_interval, acc_length);
+
+done:
+	qg_master_hold(chip, false);
+	/* FIFO restarted */
+	chip->last_fifo_update_time = ktime_get_boottime();
+	return rc;
+}
+
 static int qg_process_fifo(struct qpnp_qg *chip, u32 fifo_length)
 {
 	int rc = 0, i, j = 0, temp;
@@ -2791,6 +2900,13 @@ static int qg_load_battery_profile(struct qpnp_qg *chip)
 		chip->bp.fastchg_curr_ma = -EINVAL;
 	}
 
+	/*
+	 * Update the max fcc values based on QG subtype including
+	 * error margins.
+	 */
+	chip->bp.fastchg_curr_ma = min(chip->max_fcc_limit_ma,
+					chip->bp.fastchg_curr_ma);
+
 	rc = of_property_read_u32(profile_node, "qcom,qg-batt-profile-ver",
 				&chip->bp.qg_profile_version);
 	if (rc < 0) {
@@ -3125,6 +3241,8 @@ static int qg_set_wa_flags(struct qpnp_qg *chip)
 }
 
 #define ADC_CONV_DLY_512MS		0xA
+#define IBAT_5A_FCC_MA			4800
+#define IBAT_10A_FCC_MA			9600
 static int qg_hw_init(struct qpnp_qg *chip)
 {
 	int rc, temp;
@@ -3137,6 +3255,11 @@ static int qg_hw_init(struct qpnp_qg *chip)
 		pr_err("Failed to read QG subtype rc=%d", rc);
 		return rc;
 	}
+
+	if (chip->qg_subtype == QG_ADC_IBAT_5A)
+		chip->max_fcc_limit_ma = IBAT_5A_FCC_MA;
+	else
+		chip->max_fcc_limit_ma = IBAT_10A_FCC_MA;
 
 	rc = qg_set_wa_flags(chip);
 	if (rc < 0) {
@@ -3861,6 +3984,8 @@ static int qg_parse_dt(struct qpnp_qg *chip)
 		else
 			chip->dt.tcss_entry_soc = temp;
 	}
+
+	chip->dt.bass_enable = of_property_read_bool(node, "qcom,bass-enable");
 
 	chip->dt.multi_profile_load = of_property_read_bool(node,
 					"qcom,multi-profile-load");
