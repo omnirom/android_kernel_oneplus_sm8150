@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -54,6 +54,10 @@
  * one of the client requested for vid state
  */
 #define SDE_RSC_EVENT_SOLVER_DISABLED 0x20
+
+#define SDE_RSC_REV_1			0x1
+#define SDE_RSC_REV_2			0x2
+#define SDE_RSC_REV_3			0x3
 
 /**
  * sde_rsc_state: sde rsc state information

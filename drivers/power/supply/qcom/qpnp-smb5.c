@@ -1671,17 +1671,23 @@ static int smb5_usb_main_get_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_COMP_CLAMP_LEVEL:
 		val->intval = chg->comp_clamp_level;
 		break;
+	/* Use this property to report SMB health */
+	case POWER_SUPPLY_PROP_HEALTH:
+		rc = val->intval = smblib_get_prop_smb_health(chg);
+		break;
+	/* Use this property to report overheat status */
+	case POWER_SUPPLY_PROP_HOT_TEMP:
+		val->intval = chg->thermal_overheat;
+		break;
 	default:
 		pr_debug("get prop %d is not supported in usb-main\n", psp);
 		rc = -EINVAL;
 		break;
 	}
-	if (rc < 0) {
+	if (rc < 0)
 		pr_debug("Couldn't get prop %d rc = %d\n", psp, rc);
-		return -ENODATA;
-	}
 
-	return 0;
+	return rc;
 }
 
 static int smb5_usb_main_set_prop(struct power_supply *psy,
