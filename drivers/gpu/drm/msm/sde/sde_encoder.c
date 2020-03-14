@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2020, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -79,6 +79,9 @@
 
 /* Maximum number of VSYNC wait attempts for RSC state transition */
 #define MAX_RSC_WAIT	5
+
+/* Primary panel worst case VSYNC expected to be no less than 30fps */
+#define PRIMARY_VBLANK_WORST_CASE_MS 34
 
 #define TOPOLOGY_DUALPIPE_MERGE_MODE(x) \
 		(((x) == SDE_RM_TOPOLOGY_DUALPIPE_DSCMERGE) || \
@@ -1959,18 +1962,29 @@ static int _sde_encoder_update_rsc_client(
 		qsync_mode = sde_connector_get_qsync_mode(
 				sde_enc->cur_master->connector);
 
-	if (sde_encoder_in_clone_mode(drm_enc))
-		rsc_state = enable ? SDE_RSC_CLK_STATE : SDE_RSC_IDLE_STATE;
-	else
-		rsc_state = enable ?
-			(((disp_info->capabilities & MSM_DISPLAY_CAP_CMD_MODE)
-			  && disp_info->is_primary && !qsync_mode) ?
-			 SDE_RSC_CMD_STATE : SDE_RSC_VID_STATE) :
-			SDE_RSC_IDLE_STATE;
-
-	if (IS_SDE_MAJOR_SAME(sde_kms->core_rev, SDE_HW_VER_620) &&
-			(rsc_state == SDE_RSC_VID_STATE))
-		rsc_state = SDE_RSC_CLK_STATE;
+	if (IS_SDE_MAJOR_SAME(sde_kms->core_rev, SDE_HW_VER_620)) {
+		if (sde_encoder_in_clone_mode(drm_enc) ||
+			!disp_info->is_primary || (disp_info->is_primary &&
+				qsync_mode))
+			rsc_state = enable ? SDE_RSC_CLK_STATE :
+					SDE_RSC_IDLE_STATE;
+		else if (disp_info->capabilities & MSM_DISPLAY_CAP_CMD_MODE)
+			rsc_state = enable ? SDE_RSC_CMD_STATE :
+					SDE_RSC_IDLE_STATE;
+		else if (disp_info->capabilities & MSM_DISPLAY_CAP_VID_MODE)
+			rsc_state = enable ? SDE_RSC_VID_STATE :
+					SDE_RSC_IDLE_STATE;
+	} else {
+		if (sde_encoder_in_clone_mode(drm_enc))
+			rsc_state = enable ? SDE_RSC_CLK_STATE :
+					SDE_RSC_IDLE_STATE;
+		else
+			rsc_state = enable ? (((disp_info->capabilities &
+				MSM_DISPLAY_CAP_CMD_MODE) &&
+				disp_info->is_primary && !qsync_mode) ?
+				SDE_RSC_CMD_STATE : SDE_RSC_VID_STATE) :
+				SDE_RSC_IDLE_STATE;
+	}
 
 	SDE_EVT32(rsc_state, qsync_mode);
 
@@ -2057,11 +2071,23 @@ static int _sde_encoder_update_rsc_client(
 				sde_enc->rsc_client))
 			break;
 
-		if (crtc->base.id == wait_vblank_crtc_id)
+		/*
+		 * if primary is inactive or modeset is needed, we'll wait
+		 * for worst case ms for best effort as we don't know when
+		 * primary display will be committed.
+		 */
+		if (crtc->base.id == wait_vblank_crtc_id) {
 			ret = sde_encoder_wait_for_event(drm_enc,
 					MSM_ENC_VBLANK);
-		else
+		} else if (primary_crtc->state->active &&
+				!drm_atomic_crtc_needs_modeset(
+						primary_crtc->state)) {
 			drm_wait_one_vblank(drm_enc->dev, pipe);
+		} else {
+			SDE_EVT32(DRMID(drm_enc),
+					wait_vblank_crtc_id, crtc->base.id);
+			msleep(PRIMARY_VBLANK_WORST_CASE_MS);
+		}
 
 		if (ret) {
 			SDE_ERROR_ENC(sde_enc,
@@ -3335,7 +3361,8 @@ static void sde_encoder_virt_disable(struct drm_encoder *drm_enc)
 	 * they have been fully disabled, so delay the pre-stop operations
 	 * until after the physical disable calls have returned.
 	 */
-	if (sde_enc->disp_info.is_primary && intf_mode == INTF_MODE_CMD) {
+	if (sde_enc->disp_info.is_primary &&
+	    (intf_mode == INTF_MODE_CMD || intf_mode == INTF_MODE_VIDEO)) {
 		sde_encoder_resource_control(drm_enc,
 				SDE_ENC_RC_EVENT_PRE_STOP);
 		for (i = 0; i < sde_enc->num_phys_encs; i++) {
@@ -4205,7 +4232,7 @@ _sde_encoder_setup_dither_for_onscreenfingerprint(struct sde_encoder_phys *phys,
 
 static void _sde_encoder_setup_dither(struct sde_encoder_phys *phys)
 {
-	void *dither_cfg;
+	void *dither_cfg = NULL;
 	int ret = 0, rc, i = 0;
 	size_t len = 0;
 	enum sde_rm_topology_name topology;
@@ -4240,7 +4267,8 @@ static void _sde_encoder_setup_dither(struct sde_encoder_phys *phys)
 	}
 
 	ret = sde_connector_get_dither_cfg(phys->connector,
-			phys->connector->state, &dither_cfg, &len);
+			phys->connector->state, &dither_cfg,
+			&len, sde_enc->idle_pc_restore);
 	if (ret)
 		return;
 
@@ -5435,9 +5463,8 @@ struct drm_encoder *sde_encoder_init_with_ops(
 	struct sde_encoder_virt *sde_enc = NULL;
 	int drm_enc_mode = DRM_MODE_ENCODER_NONE;
 	char name[SDE_NAME_SIZE];
-//	int ret = 0, i, intf_index = INTF_MAX;
-//	struct sde_encoder_phys *phys = NULL;
-	int ret = 0;
+	int ret = 0, i, intf_index = INTF_MAX;
+	struct sde_encoder_phys *phys = NULL;
 
 	sde_enc = kzalloc(sizeof(*sde_enc), GFP_KERNEL);
 	if (!sde_enc) {
@@ -5466,18 +5493,17 @@ struct drm_encoder *sde_encoder_init_with_ops(
 				sde_encoder_vsync_event_handler,
 				(unsigned long)sde_enc);
 
-//	for (i = 0; i < sde_enc->num_phys_encs; i++) {
-//		phys = sde_enc->phys_encs[i];
-//		if (!phys)
-//			continue;
-//		if (phys->ops.is_master && phys->ops.is_master(phys))
-//			intf_index = phys->intf_idx - INTF_0;
-//	}
+	for (i = 0; i < sde_enc->num_phys_encs; i++) {
+		phys = sde_enc->phys_encs[i];
+		if (!phys)
+			continue;
+		if (phys->ops.is_master && phys->ops.is_master(phys))
+			intf_index = phys->intf_idx - INTF_0;
+	}
 	snprintf(name, SDE_NAME_SIZE, "rsc_enc%u", drm_enc->base.id);
 	sde_enc->rsc_client = sde_rsc_client_create(SDE_RSC_INDEX, name,
-//		disp_info->is_primary ? SDE_RSC_PRIMARY_DISP_CLIENT :
-//		SDE_RSC_EXTERNAL_DISP_CLIENT, intf_index + 1);
-    					disp_info->is_primary);
+		disp_info->is_primary ? SDE_RSC_PRIMARY_DISP_CLIENT :
+		SDE_RSC_EXTERNAL_DISP_CLIENT, intf_index + 1);
 	if (IS_ERR_OR_NULL(sde_enc->rsc_client)) {
 		SDE_DEBUG("sde rsc client create failed :%ld\n",
 						PTR_ERR(sde_enc->rsc_client));
