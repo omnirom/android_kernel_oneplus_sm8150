@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -96,6 +96,8 @@ enum dsi_op_mode {
  * @DSI_MODE_FLAG_VRR: Seamless transition is DynamicFPS.
  *                     New timing values are sent from DAL.
  * @DSI_MODE_FLAG_DYN_CLK: Seamless transition is dynamic clock change
+ * @DSI_MODE_FLAG_POMS:
+ *     Seamless transition is dynamic panel operating mode switch
  */
 enum dsi_mode_flags {
 	DSI_MODE_FLAG_SEAMLESS			= BIT(0),
@@ -104,6 +106,7 @@ enum dsi_mode_flags {
 	DSI_MODE_FLAG_DMS			= BIT(3),
 	DSI_MODE_FLAG_VRR			= BIT(4),
 	DSI_MODE_FLAG_DYN_CLK			= BIT(5),
+	DSI_MODE_FLAG_POMS			= BIT(6),
 };
 
 /**
@@ -235,6 +238,23 @@ enum dsi_dfps_type {
 	DSI_DFPS_IMMEDIATE_HFP,
 	DSI_DFPS_IMMEDIATE_VFP,
 	DSI_DFPS_MAX
+};
+
+/**
+ * enum dsi_dyn_clk_feature_type - Dynamic clock feature support type
+ * @DSI_DYN_CLK_TYPE_LEGACY:	Constant FPS is not supported
+ * @DSI_DYN_CLK_TYPE_CONST_FPS_ADJUST_HFP:	Constant FPS supported with
+ *		change in hfp
+ * @DSI_DYN_CLK_TYPE_CONST_FPS_ADJUST_VFP:	Constant FPS supported with
+ *		change in vfp
+ * @DSI_DYN_CLK_TYPE_MAX:
+ */
+
+enum dsi_dyn_clk_feature_type {
+	DSI_DYN_CLK_TYPE_LEGACY = 0,
+	DSI_DYN_CLK_TYPE_CONST_FPS_ADJUST_HFP,
+	DSI_DYN_CLK_TYPE_CONST_FPS_ADJUST_VFP,
+	DSI_DYN_CLK_TYPE_MAX
 };
 
 /**
@@ -458,6 +478,7 @@ struct dsi_panel_cmd_set {
  * @clk_rate_hz:      DSI bit clock rate per lane in Hz.
  * @mdp_transfer_time_us:   Specifies the mdp transfer time for command mode
  *                    panels in microseconds.
+ * @overlap_pixels:   overlap pixels for certain panels.
  * @dsc_enabled:      DSC compression enabled.
  * @dsc:              DSC compression configuration.
  * @roi_caps:         Panel ROI capabilities.
@@ -479,6 +500,7 @@ struct dsi_mode_info {
 	u32 refresh_rate;
 	u64 clk_rate_hz;
 	u32 mdp_transfer_time_us;
+   	u32 overlap_pixels;
 	bool dsc_enabled;
 	struct msm_display_dsc_info *dsc;
 	struct msm_roi_caps roi_caps;
@@ -634,6 +656,7 @@ struct dsi_host_config {
  * @mdp_transfer_time_us:   Specifies the mdp transfer time for command mode
  *                          panels in microseconds.
  * @clk_rate_hz:          DSI bit clock per lane in hz.
+ * @overlap_pixels:       overlap pixels for certain panels.
  * @topology:             Topology selected for the panel
  * @dsc:                  DSC compression info
  * @dsc_enabled:          DSC compression enabled
@@ -650,6 +673,7 @@ struct dsi_display_mode_priv_info {
 	u32 panel_prefill_lines;
 	u32 mdp_transfer_time_us;
 	u64 clk_rate_hz;
+  	u32 overlap_pixels;
 
 	struct msm_display_topology topology;
 	struct msm_display_dsc_info dsc;
@@ -662,11 +686,13 @@ struct dsi_display_mode_priv_info {
  * @timing:         Timing parameters for the panel.
  * @pixel_clk_khz:  Pixel clock in Khz.
  * @dsi_mode_flags: Flags to signal other drm components via private flags
+ * @panel_mode:     Panel operating mode
  * @priv_info:      Mode private info
  */
 struct dsi_display_mode {
 	struct dsi_mode_info timing;
 	u32 pixel_clk_khz;
+	enum dsi_op_mode panel_mode;
 	u32 dsi_mode_flags;
 	struct dsi_display_mode_priv_info *priv_info;
 };

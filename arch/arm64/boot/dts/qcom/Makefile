@@ -7,10 +7,21 @@ dtb-$(CONFIG_ARCH_QCOM)	+= msm8916-mtp.dtb
 dtb-$(CONFIG_ARCH_QCOM)	+= msm8992-bullhead-rev-101.dtb
 dtb-$(CONFIG_ARCH_QCOM)	+= msm8994-angler-rev-101.dtb
 dtb-$(CONFIG_ARCH_QCOM)	+= msm8996-mtp.dtb
-ifeq ($(CONFIG_ARM64),y)
-dtb-$(CONFIG_ARCH_QCS405) += qcs405-rumi.dtb \
-		qcs405-iot-sku1.dtb \
-		qcs405-iot-sku2.dtb \
+
+dtb-$(CONFIG_ARCH_QCS403) += qcs403-iot-sku1.dtb \
+			qcs403-iot-sku2.dtb \
+			qcs403-iot-sku3.dtb \
+			qcs403-iot-sku5.dtb \
+			qcs401-iot-sku5.dtb \
+			qcs404-iot-sku2.dtb \
+			qcs404-iot-sku3.dtb \
+			qcs404-iot-sku5.dtb \
+			qcs404-iot-sku6.dtb \
+			qcs405-iot-sku1.dtb \
+			qcs407-iot-sku1.dtb
+
+dtb-$(CONFIG_ARCH_QCS405) += qcs405-iot-sku1.dtb \
+		qcs407-iot-sku1.dtb \
 		qcs405-iot-sku3.dtb \
 		qcs405-iot-sku4.dtb \
 		qcs405-iot-sku5.dtb \
@@ -24,7 +35,6 @@ dtb-$(CONFIG_ARCH_QCS405) += qcs405-rumi.dtb \
 		qcs407-iot-sku12.dtb \
 		qcs405-iot-sku13.dtb \
 		qcs407-iot-sku13.dtb
-endif
 
 ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
 	dtbo-$(CONFIG_ARCH_SM8150) += \

@@ -1,10 +1,12 @@
-/*
- * aQuantia Corporation Network Driver
- * Copyright (C) 2017 aQuantia Corporation. All rights reserved
+// SPDX-License-Identifier: GPL-2.0-only
+/* Atlantic Network Driver
  *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms and conditions of the GNU General Public License,
- * version 2, as published by the Free Software Foundation.
+ * Copyright (C) 2017 aQuantia Corporation
+ * Copyright (C) 2019-2020 Marvell International Ltd.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
  */
 
 #include "atl_ring.h"
@@ -1886,6 +1888,11 @@ void atl_update_global_stats(struct atl_nic *nic)
 	int i;
 	struct atl_ring_stats stats;
 
+	if (!test_bit(ATL_ST_ENABLED, &nic->hw.state) ||
+	    test_bit(ATL_ST_RESETTING, &nic->hw.state) ||
+	    !test_bit(ATL_ST_CONFIGURED, &nic->hw.state))
+		return;
+
 	memset(&stats, 0, sizeof(stats));
 
 	spin_lock(&nic->stats_lock);
@@ -1928,8 +1935,8 @@ void atl_get_stats64(struct net_device *ndev,
 
 	atl_update_global_stats(nic);
 
-	nstats->rx_bytes = stats->rx.bytes;
-	nstats->rx_packets = stats->rx.packets;
+	nstats->rx_bytes = stats->rx.bytes + stats->rx_fwd.bytes;
+	nstats->rx_packets = stats->rx.packets + stats->rx_fwd.packets;
 	nstats->tx_bytes = stats->tx.bytes;
 	nstats->tx_packets = stats->tx.packets;
 	nstats->rx_crc_errors = stats->rx.csum_err;
