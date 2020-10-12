@@ -595,14 +595,6 @@ static void bcl_lvl_init(struct platform_device *pdev,
 	thermal_zone_device_update(lbat->tz_dev, THERMAL_DEVICE_UP);
 }
 
-static void bcl_probe_lvls(struct platform_device *pdev,
-					struct bcl_device *bcl_perph)
-{
-	bcl_lvl_init(pdev, BCL_LVL0, BCL_IRQ_L0, bcl_perph);
-	bcl_lvl_init(pdev, BCL_LVL1, BCL_IRQ_L1, bcl_perph);
-	bcl_lvl_init(pdev, BCL_LVL2, BCL_IRQ_L2, bcl_perph);
-}
-
 static void bcl_configure_bcl_peripheral(struct bcl_device *bcl_perph)
 {
 	bcl_write_register(bcl_perph, BCL_MONITOR_EN, BIT(7));
@@ -648,7 +640,7 @@ static int bcl_probe(struct platform_device *pdev)
 	bcl_get_devicetree_data(pdev, bcl_perph);
 	bcl_probe_vbat(pdev, bcl_perph);
 	bcl_probe_ibat(pdev, bcl_perph);
-	bcl_probe_lvls(pdev, bcl_perph);
+	//bcl_probe_lvls(pdev, bcl_perph);
 	bcl_configure_bcl_peripheral(bcl_perph);
 
 	dev_set_drvdata(&pdev->dev, bcl_perph);
