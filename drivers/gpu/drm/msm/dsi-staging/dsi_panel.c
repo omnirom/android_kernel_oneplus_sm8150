@@ -683,21 +683,23 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 	goto exit;
 
 error_disable_gpio:
-	if (gpio_is_valid(panel->reset_config.disp_en_gpio))
+	if (gpio_is_valid(panel->reset_config.disp_en_gpio)) {
 		gpio_set_value(panel->reset_config.disp_en_gpio, 0);
+    }
 
-	if (gpio_is_valid(panel->bl_config.en_gpio))
+	if (gpio_is_valid(panel->bl_config.en_gpio)) {
 		gpio_set_value(panel->bl_config.en_gpio, 0);
 //error_disable_pinctrl:
 		(void)dsi_panel_set_pinctrl_state(panel, false);
-
+    }
 error_disable_vddd:
-	if (gpio_is_valid(panel->vddd_gpio))
+	if (gpio_is_valid(panel->vddd_gpio)) {
 		gpio_set_value(panel->vddd_gpio, 0);
-
+    }
 error_disable_poc:
-	if (gpio_is_valid(panel->poc))
+	if (gpio_is_valid(panel->poc)) {
 		gpio_set_value(panel->poc, 0);
+    }
 
 error_disable_vregs:
 	(void)dsi_pwr_enable_regulator(&panel->power_info, false);
@@ -710,14 +712,17 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 {
 	int rc = 0;
 
-	if (gpio_is_valid(panel->reset_config.disp_en_gpio))
+	if (gpio_is_valid(panel->reset_config.disp_en_gpio)) {
 		gpio_set_value(panel->reset_config.disp_en_gpio, 0);
+    }
 
-	if (gpio_is_valid(panel->reset_config.reset_gpio))
+	if (gpio_is_valid(panel->reset_config.reset_gpio)) {
 		gpio_set_value(panel->reset_config.reset_gpio, 0);
+    }
 
-	if (gpio_is_valid(panel->reset_config.lcd_mode_sel_gpio))
+	if (gpio_is_valid(panel->reset_config.lcd_mode_sel_gpio)) {
 		gpio_set_value(panel->reset_config.lcd_mode_sel_gpio, 0);
+    }
 
 	if (strcmp(panel->name, "samsung sofef03f_m fhd cmd mode dsc dsi panel") == 0) {
 		msleep(10);

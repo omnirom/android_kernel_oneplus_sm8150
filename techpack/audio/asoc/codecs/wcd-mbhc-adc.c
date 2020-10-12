@@ -874,16 +874,19 @@ enable_supply:
 	else
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_DETECTION_DONE, 0);
 
-	if (mbhc->mbhc_cb->mbhc_micbias_control)
+	if (mbhc->mbhc_cb->mbhc_micbias_control) {
 		wcd_mbhc_adc_update_fsm_source(mbhc, plug_type);
+    }
 exit:
-    if (plug_type == MBHC_PLUG_TYPE_HEADSET)
+    if (plug_type == MBHC_PLUG_TYPE_HEADSET) {
         mbhc->micbias_enable = true;
+    }
 
 	if (mbhc->mbhc_cb->mbhc_micbias_control &&
-	    !mbhc->micbias_enable)
-		mbhc->mbhc_cb->mbhc_micbias_control(codec, MIC_BIAS_2,
+	    !mbhc->micbias_enable) {
+		    mbhc->mbhc_cb->mbhc_micbias_control(codec, MIC_BIAS_2,
 						    MICB_DISABLE);
+    }
 
 	/*
 	 * If plug type is corrected from special headset to headphone,

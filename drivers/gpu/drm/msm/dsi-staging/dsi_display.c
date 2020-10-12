@@ -10241,9 +10241,9 @@ int dsi_display_read_panel_id(struct dsi_display *dsi_display,
 		flags |= DSI_CTRL_CMD_LAST_COMMAND;
 	}
 	flags |= (DSI_CTRL_CMD_FETCH_MEMORY | DSI_CTRL_CMD_READ);
-    if (!m_ctrl->ctrl->vaddr)
+    if (!m_ctrl->ctrl->vaddr) {
         goto error;
-
+    }
 	cmds->msg.rx_buf = buf;
 	cmds->msg.rx_len = len;
 	retry_times = 0;
@@ -10252,9 +10252,9 @@ int dsi_display_read_panel_id(struct dsi_display *dsi_display,
 	    retry_times++;
 	} while ((rc <= 0) && (retry_times < 3));
 
-	if (rc <= 0)
+	if (rc <= 0) {
 		pr_err("rx cmd transfer failed rc=%d\n", rc);
-
+    }
  error:
 	dsi_panel_release_panel_lock(panel);
 
