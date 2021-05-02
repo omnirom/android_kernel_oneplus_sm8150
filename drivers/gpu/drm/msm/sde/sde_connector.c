@@ -64,6 +64,10 @@ static const struct drm_prop_enum_list e_qsync_mode[] = {
 	{SDE_RM_QSYNC_ONE_SHOT_MODE,	"one_shot"},
 };
 
+extern bool sde_crtc_get_fingerprint_mode(struct drm_crtc_state *crtc_state);
+extern bool sde_crtc_get_fingerprint_pressed(struct drm_crtc_state *crtc_state);
+extern int oneplus_onscreenfp_status;
+
 static int sde_backlight_device_update_status(struct backlight_device *bd)
 {
 	int brightness;
@@ -96,6 +100,10 @@ static int sde_backlight_device_update_status(struct backlight_device *bd)
 		c_conn->unset_bl_level = bl_lvl;
 		return 0;
 	}
+	//pr_err("oneplus_onscreenfp_status= %u sde_crtc_get_fingerprint_mode = %u sde_crtc_get_fingerprint_pressed = %u bl_lvl = %u\n", oneplus_onscreenfp_status, sde_crtc_get_fingerprint_mode(c_conn->encoder->crtc->state), sde_crtc_get_fingerprint_pressed(c_conn->encoder->crtc->state), bl_lvl);
+	if (sde_crtc_get_fingerprint_pressed(c_conn->encoder->crtc->state)) {
+        return 0;
+    }
 
 	if (c_conn->ops.set_backlight) {
 		event.type = DRM_EVENT_SYS_BACKLIGHT;
@@ -514,13 +522,10 @@ static int _sde_connector_update_bl_scale(struct sde_connector *c_conn)
 
 	return rc;
 }
-extern bool sde_crtc_get_fingerprint_mode(struct drm_crtc_state *crtc_state);
-extern bool sde_crtc_get_fingerprint_pressed(struct drm_crtc_state *crtc_state);
 extern int dsi_display_set_hbm_mode(struct drm_connector *connector, int level);
 int aod_layer_hide = 0;
 extern bool HBM_flag ;
 extern int oneplus_dim_status;
-extern int oneplus_onscreenfp_status;
 extern bool aod_fod_flag;
 extern bool real_aod_mode;
 extern bool aod_complete;
